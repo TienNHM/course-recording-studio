@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from "fs";
 import path from "path";
 import { CAPTIONS_PREFIX, WEBCAM_PREFIX } from "../../config/cameras";
 import { captionFile } from "../captions/caption-file";
+import { runExclusive } from "./production/job-queue";
 
 export const transcribeVideo = async ({
   endDateAsString,
@@ -60,11 +61,14 @@ export const transcribeVideo = async ({
     return;
   }
 
-  await captionFile({
-    file: fileName,
-    outPath,
-    fileToTranscribe: filePath,
-    onProgress,
-    signal,
-  });
+  // Shares the production queue so whisper/ffmpeg never run concurrently.
+  await runExclusive(() =>
+    captionFile({
+      file: fileName,
+      outPath,
+      fileToTranscribe: filePath,
+      onProgress,
+      signal,
+    }),
+  );
 };

@@ -13,6 +13,7 @@ import {
   UPLOAD_VIDEO,
 } from "./constants";
 import { createProject } from "./create-project";
+import { registerProductionRoutes } from "./production/register-routes";
 import { indexHtmlDev } from "./index-html";
 import { getProjectFolder } from "./projects";
 import {
@@ -58,6 +59,8 @@ export const startServer = async () => {
   app.use(UPLOAD_VIDEO, handleVideoUpload);
   app.use(TRANSCRIBE_VIDEO, handleTranscribeVideo);
   app.use(CANCEL_TRANSCRIBE, handleCancelTranscription);
+  // Post-production, edit plan and render routes (Course Recording Studio).
+  registerProductionRoutes(app);
   app.use("/", indexHtmlDev(vite, rootDir));
 
   const port = process.env.PORT || SERVER_PORT;
