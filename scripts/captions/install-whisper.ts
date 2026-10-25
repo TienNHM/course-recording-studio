@@ -3,6 +3,8 @@ import {
   downloadWhisperModel,
   installWhisperCpp,
 } from "@remotion/install-whisper-cpp";
+import fs from "fs";
+import path from "path";
 import { WHISPER_MODEL, WHISPER_PATH, WHISPER_REF } from "../../config/whisper";
 
 // Installs whisper.cpp (if needed) and downloads `model` (if needed).
@@ -35,6 +37,14 @@ export const ensureWhisper = async ({
     clearTimeout(timeout);
   }
 
+  // A download interrupted by a crash leaves a truncated model behind, which
+  // downloadWhisperModel() rejects. The marker file tells us to discard it.
+  const modelPath = path.join(WHISPER_PATH, `ggml-${model}.bin`);
+  const marker = `${modelPath}.downloading`;
+  if (fs.existsSync(marker)) {
+    fs.rmSync(modelPath, { force: true });
+  }
+  fs.writeFileSync(marker, "");
   await downloadWhisperModel({
     model,
     folder: WHISPER_PATH,
@@ -44,4 +54,5 @@ export const ensureWhisper = async ({
     },
     signal,
   });
+  fs.rmSync(marker, { force: true });
 };

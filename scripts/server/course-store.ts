@@ -21,12 +21,36 @@ export const readJson = <T>(file: string): T => {
   return JSON.parse(fs.readFileSync(file, "utf-8")) as T;
 };
 
+// On Windows, replacing a file that another handle is reading (a status
+// request, the Vite watcher, antivirus) fails transiently with these codes.
+const TRANSIENT_RENAME_ERRORS = ["EPERM", "EBUSY", "EACCES"];
+
+const renameWithRetry = (from: string, to: string) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? "";
+      if (!TRANSIENT_RENAME_ERRORS.includes(code) || attempt >= 10) {
+        throw err;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+  }
+};
+
 // Write to a temp file and rename, so a crash never leaves half-written JSON.
 export const writeJsonAtomic = (file: string, data: unknown) => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, file);
+  try {
+    renameWithRetry(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
 };
 
 export const readLesson = (lessonDir: string): Lesson => {

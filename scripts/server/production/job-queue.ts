@@ -54,9 +54,28 @@ export const runExclusive = <T>(fn: () => Promise<T>): Promise<T> => {
   return result;
 };
 
-const persist = (job: QueuedJob) => {
-  job.state.updatedAt = new Date().toISOString();
-  writeJsonAtomic(jobFile(job.state.lessonPath), job.state);
+const PROGRESS_WRITE_INTERVAL_MS = 500;
+const lastProgressWrite = new WeakMap<QueuedJob, number>();
+
+// Progress callbacks (model downloads, renders) fire many times per second.
+// Only status changes are written every time; plain progress is throttled.
+// GET status serves the in-memory state for active jobs, so it stays live.
+// A failed write is logged, never thrown: it must not crash the server.
+const persist = (job: QueuedJob, { force = true } = {}) => {
+  const now = Date.now();
+  job.state.updatedAt = new Date(now).toISOString();
+  if (
+    !force &&
+    now - (lastProgressWrite.get(job) ?? 0) < PROGRESS_WRITE_INTERVAL_MS
+  ) {
+    return;
+  }
+  lastProgressWrite.set(job, now);
+  try {
+    writeJsonAtomic(jobFile(job.state.lessonPath), job.state);
+  } catch (err) {
+    console.warn(`Could not write job state for ${job.state.lessonPath}:`, err);
+  }
 };
 
 export const getActiveJob = (lessonPath: string) => {
@@ -138,11 +157,13 @@ export const enqueueJob = ({
         if (job.controller.signal.aborted && !patch.status) {
           return;
         }
+        const statusChanged =
+          patch.status !== undefined && patch.status !== job.state.status;
         Object.assign(job.state, patch);
         if (patch.progress !== undefined) {
           job.state.progress = Math.max(0, Math.min(1, patch.progress));
         }
-        persist(job);
+        persist(job, { force: statusChanged });
       },
     };
     try {
