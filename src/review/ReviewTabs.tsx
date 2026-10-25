@@ -25,7 +25,7 @@ export const ReviewTabs: React.FC<{
     <div
       role="tablist"
       aria-label={label}
-      className="flex gap-1 overflow-x-auto border-b px-2 pt-2"
+      className="flex gap-0.5 overflow-x-auto overflow-y-hidden border-b px-1.5 pt-1.5 [scrollbar-width:none]"
     >
       {tabs.map((tab, index) => {
         const selected = tab.id === value;
@@ -57,16 +57,18 @@ export const ReviewTabs: React.FC<{
               }
             }}
             className={cn(
-              "relative -mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-t-md border-b-2 border-transparent px-2.5 py-2 text-label text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              "relative -mb-px inline-flex min-w-0 flex-auto items-center justify-center gap-1 whitespace-nowrap rounded-t-md border-b-2 border-transparent px-1.5 py-2 text-label text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               selected && "border-primary text-foreground",
             )}
           >
-            {tab.icon}
-            {tab.label}
+            <span className="hidden shrink-0 sm:inline-flex lg:max-xl:hidden">
+              {tab.icon}
+            </span>
+            <span className="truncate">{tab.label}</span>
             {tab.count !== undefined && tab.count !== null ? (
               <span
                 className={cn(
-                  "timecode rounded-full px-1.5 text-2xs",
+                  "timecode shrink-0 rounded-full px-1.5 text-2xs",
                   tab.countTone === "warning"
                     ? "bg-warning/10 text-warning"
                     : "bg-muted text-muted-foreground",
@@ -77,7 +79,7 @@ export const ReviewTabs: React.FC<{
             ) : null}
             {tab.dirty ? (
               <span
-                className="h-1.5 w-1.5 rounded-full bg-warning"
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
                 title={unsavedLabel}
                 aria-label={unsavedLabel}
               />

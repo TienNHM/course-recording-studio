@@ -107,7 +107,7 @@ export const PublishedFiles: React.FC<{
         {hasVideo && hasThumb ? (
           <button
             type="button"
-            className="group relative w-full shrink-0 overflow-hidden rounded-md border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-48"
+            className="group relative w-full shrink-0 self-start overflow-hidden rounded-md border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-48"
             style={{ aspectRatio: "16 / 9" }}
             aria-label={t("published.play")}
             onClick={() => setPlaying(true)}

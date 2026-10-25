@@ -801,6 +801,7 @@ const ReviewContent: React.FC<{
                       segments={segments}
                       durationMs={durationMs}
                       outputChapters={outputChapters}
+                      firstTitle={plan.intro?.title ?? lesson?.title ?? ""}
                       disabled={locked}
                       resetToken={resetToken}
                       getPlayheadMs={getPlayheadOriginal}

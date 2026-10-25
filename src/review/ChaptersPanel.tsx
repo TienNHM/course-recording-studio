@@ -27,6 +27,8 @@ export const ChaptersPanel: React.FC<{
   readonly durationMs: number;
   /** Chapters of the rendered video (preview), for "copy for YouTube". */
   readonly outputChapters: Chapter[] | null;
+  /** Title for 00:00 when the first chapter starts later (the intro). */
+  readonly firstTitle: string;
   readonly disabled: boolean;
   /** Changing it discards the drafts. */
   readonly resetToken: number;
@@ -40,6 +42,7 @@ export const ChaptersPanel: React.FC<{
   segments,
   durationMs,
   outputChapters,
+  firstTitle,
   disabled,
   resetToken,
   getPlayheadMs,
@@ -147,7 +150,7 @@ export const ChaptersPanel: React.FC<{
   };
 
   const youtube = outputChapters
-    ? formatYouTubeChapters(outputChapters)
+    ? formatYouTubeChapters(outputChapters, { firstTitle })
     : "";
 
   return (
