@@ -72,7 +72,7 @@ export const createProject = async (
       }),
     );
     return res.end();
-  } catch (e) {
+  } catch {
     res.statusCode = 500;
     res.write(
       JSON.stringify({
