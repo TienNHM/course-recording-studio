@@ -5,29 +5,29 @@ import {
 } from "../scripts/server/render/chapters";
 
 describe("ensureChapterAtZero", () => {
-  test("prepends the intro title when the first chapter starts later", () => {
+  test('prepends a localized "Mở đầu" chapter when the first chapter starts later', () => {
     expect(
       ensureChapterAtZero(
         [
           { timeMs: 3000, title: "Setup" },
           { timeMs: 60_000, title: "Next" },
         ],
-        "Intro to React",
+        "vi",
       ),
     ).toEqual([
-      { timeMs: 0, title: "Intro to React" },
+      { timeMs: 0, title: "Mở đầu" },
       { timeMs: 3000, title: "Setup" },
       { timeMs: 60_000, title: "Next" },
     ]);
   });
 
-  test('falls back to "Intro" without an intro title', () => {
-    expect(ensureChapterAtZero([{ timeMs: 5000, title: "A" }], null)).toEqual([
+  test('uses "Intro" for English courses and "Mở đầu" by default', () => {
+    expect(ensureChapterAtZero([{ timeMs: 5000, title: "A" }], "en")).toEqual([
       { timeMs: 0, title: "Intro" },
       { timeMs: 5000, title: "A" },
     ]);
-    expect(ensureChapterAtZero([{ timeMs: 5000, title: "A" }], "  ")).toEqual([
-      { timeMs: 0, title: "Intro" },
+    expect(ensureChapterAtZero([{ timeMs: 5000, title: "A" }])).toEqual([
+      { timeMs: 0, title: "Mở đầu" },
       { timeMs: 5000, title: "A" },
     ]);
   });
@@ -39,7 +39,7 @@ describe("ensureChapterAtZero", () => {
           { timeMs: 9000, title: "B" },
           { timeMs: 0, title: "A" },
         ],
-        "Intro",
+        "en",
       ),
     ).toEqual([
       { timeMs: 0, title: "A" },
@@ -48,7 +48,7 @@ describe("ensureChapterAtZero", () => {
   });
 
   test("no chapters stays empty", () => {
-    expect(ensureChapterAtZero([], "Intro")).toEqual([]);
+    expect(ensureChapterAtZero([], "vi")).toEqual([]);
   });
 });
 
@@ -56,15 +56,16 @@ describe("buildPublishedChapters", () => {
   test("parses the artifact and returns pretty JSON", () => {
     const out = buildPublishedChapters(
       JSON.stringify([{ timeMs: 3000, title: "Lesson" }]),
-      "Title card",
+      "en",
     );
+    expect(out).toContain("\n  ");
     expect(JSON.parse(out)).toEqual([
-      { timeMs: 0, title: "Title card" },
+      { timeMs: 0, title: "Intro" },
       { timeMs: 3000, title: "Lesson" },
     ]);
   });
 
   test("rejects non-array content", () => {
-    expect(() => buildPublishedChapters("{}", null)).toThrow();
+    expect(() => buildPublishedChapters("{}", "vi")).toThrow();
   });
 });

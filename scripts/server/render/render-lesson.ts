@@ -14,7 +14,14 @@ import net from "net";
 import { tmpdir } from "os";
 import path from "path";
 import { publishedPath } from "../../../config/course";
-import { PUBLIC_DIR, readLesson, resolvePublicPath } from "../course-store";
+import type { LessonLanguage } from "../../../remotion/lesson/i18n";
+import { DEFAULT_LESSON_LANGUAGE } from "../../../remotion/lesson/i18n";
+import {
+  PUBLIC_DIR,
+  readCourse,
+  readLesson,
+  resolvePublicPath,
+} from "../course-store";
 import type { JobContext } from "../production/job-queue";
 import {
   getTakeFiles,
@@ -150,8 +157,9 @@ const PROGRESS = {
 const within = (range: readonly [number, number], p: number) =>
   range[0] + (range[1] - range[0]) * p;
 
-// Thumbnail frame: with an intro the title card (≈1 s in) shows the lesson
-// title, which makes a good thumbnail; without one, 2 s into the first segment.
+// Thumbnail frame: with an intro the title card (1.8 s in, after the staggered
+// title reveal and before the transition) makes a good thumbnail; without one,
+// 2 s into the first segment.
 export const getThumbnailFrame = ({
   fps,
   durationInFrames,
@@ -161,7 +169,7 @@ export const getThumbnailFrame = ({
   durationInFrames: number;
   hasIntro: boolean;
 }) => {
-  const frame = Math.round(fps * (hasIntro ? 1 : 2));
+  const frame = Math.round(fps * (hasIntro ? 1.8 : 2));
   return Math.max(0, Math.min(durationInFrames - 1, frame));
 };
 
@@ -202,6 +210,13 @@ export const runRender = async ({
   const { signal } = ctx;
   const lesson = readLesson(lessonPath);
   const plan = readEditPlan(lessonPath);
+  // Language of published texts (chapters.json 0:00 entry, transcript.md).
+  let language: LessonLanguage = DEFAULT_LESSON_LANGUAGE;
+  try {
+    language = readCourse(lesson.courseId).language;
+  } catch {
+    console.warn(`Could not read course ${lesson.courseId}, using "vi"`);
+  }
   if (!plan) {
     throw new Error("No edit plan yet. Run post-production first.");
   }
@@ -302,7 +317,7 @@ export const runRender = async ({
     if (chapters !== undefined) {
       fs.writeFileSync(
         path.join(staging, "chapters.json"),
-        buildPublishedChapters(chapters.toString(), plan.intro?.title ?? null),
+        buildPublishedChapters(chapters.toString(), language),
       );
     } else {
       console.warn(`The composition emitted no ${CHAPTERS_ARTIFACT} artifact`);
@@ -311,7 +326,12 @@ export const runRender = async ({
     const captions = readCaptions(getTakeFiles(lessonPath, plan.takeId)) ?? [];
     fs.writeFileSync(
       path.join(staging, "transcript.md"),
-      buildTranscriptMarkdown({ title: lesson.title, captions, plan }),
+      buildTranscriptMarkdown({
+        title: lesson.title,
+        captions,
+        plan,
+        language,
+      }),
     );
 
     if (signal.aborted) {

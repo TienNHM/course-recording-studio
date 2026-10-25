@@ -1,6 +1,11 @@
 // Pure helpers for published subtitle / transcript files.
 import type { Caption } from "@remotion/captions";
 import type { EditPlan } from "../../../config/course";
+import type { LessonLanguage } from "../../../remotion/lesson/i18n";
+import {
+  DEFAULT_LESSON_LANGUAGE,
+  getLessonStrings,
+} from "../../../remotion/lesson/i18n";
 
 // SRT → WebVTT: add the header, use "." as the millisecond separator in
 // timings, drop the numeric cue counters (optional in VTT, kept harmless
@@ -38,16 +43,20 @@ const isKept = (caption: Caption, segments: EditPlan["segments"]) => {
 
 // transcript.md: lesson title + the plain text of the captions that survive
 // the edit (caption midpoint inside a kept segment), grouped by chapter.
-// Text before the first chapter is placed under no heading.
+// Text before the first chapter goes under a localized "Mở đầu" / "Intro"
+// heading (no heading at all if the lesson has no chapters).
 export const buildTranscriptMarkdown = ({
   title,
   captions,
   plan,
+  language = DEFAULT_LESSON_LANGUAGE,
 }: {
   title: string;
   captions: Caption[];
   plan: Pick<EditPlan, "segments" | "chapters">;
+  language?: LessonLanguage;
 }): string => {
+  const strings = getLessonStrings(language);
   const chapters = [...plan.chapters].sort((a, b) => a.timeMs - b.timeMs);
   const kept = captions.filter((c) => isKept(c, plan.segments));
 
@@ -71,7 +80,9 @@ export const buildTranscriptMarkdown = ({
   for (const group of groups) {
     const text = collapse(group.text.join(""));
     if (group.title !== null) {
-      parts.push(`## ${collapse(group.title)}`);
+      parts.push(`## ${collapse(group.title) || strings.introChapter}`);
+    } else if (text && chapters.length > 0) {
+      parts.push(`## ${strings.introChapter}`);
     }
     if (text) {
       parts.push(text);

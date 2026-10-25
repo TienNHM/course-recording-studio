@@ -191,7 +191,7 @@ describe("thumbnail frame", () => {
   test("clamped", () => {
     expect(
       getThumbnailFrame({ fps: 30, durationInFrames: 1000, hasIntro: true }),
-    ).toBe(30);
+    ).toBe(54);
     expect(
       getThumbnailFrame({ fps: 30, durationInFrames: 1000, hasIntro: false }),
     ).toBe(60);
