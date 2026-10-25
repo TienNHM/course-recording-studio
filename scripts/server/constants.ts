@@ -11,5 +11,6 @@ export const PRODUCTION_START = "/api/production/start";
 export const PRODUCTION_STATUS = "/api/production/status";
 export const PRODUCTION_CANCEL = "/api/production/cancel";
 export const EDIT_PLAN_API = "/api/production/edit-plan";
+export const CAPTIONS_API = "/api/production/captions";
 export const RENDER_LESSON = "/api/render";
 export const DISK_SPACE = "/api/disk-space";

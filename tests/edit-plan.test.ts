@@ -13,6 +13,7 @@ import {
   normalizeCuts,
   recomputeSegments,
   relocateChapters,
+  resolvePlanDurationMs,
 } from "../scripts/server/production/edit-plan";
 
 const word = (text: string, startMs: number, endMs: number): Caption => ({
@@ -252,6 +253,7 @@ describe("buildEditPlan", () => {
     expect(editPlan.parse(plan)).toEqual(plan);
     expect(plan).toEqual({
       takeId: "123",
+      durationMs: 60_000,
       segments: [{ startMs: 0, endMs: 60_000 }],
       cuts: [],
       chapters: [{ timeMs: 0, title: "Intro to React" }],
@@ -455,5 +457,23 @@ describe("applyEditPlanPatch", () => {
         60_000,
       ),
     ).toThrow();
+  });
+});
+
+describe("resolvePlanDurationMs", () => {
+  test("prefers the plan's own duration", () => {
+    const plan = buildEditPlan(base());
+    expect(resolvePlanDurationMs(plan, 1234)).toBe(60_000);
+  });
+
+  test("falls back to analysis.json, then the furthest known time", () => {
+    const legacy = {
+      ...buildEditPlan(
+        base({ silences: [{ startMs: 20_000, endMs: 30_000 }] }),
+      ),
+      durationMs: undefined,
+    };
+    expect(resolvePlanDurationMs(legacy, 61_000)).toBe(61_000);
+    expect(resolvePlanDurationMs(legacy, null)).toBe(60_000);
   });
 });

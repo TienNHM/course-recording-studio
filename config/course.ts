@@ -46,6 +46,38 @@ export const jobStatus = z.enum([
 ]);
 export type JobStatus = z.infer<typeof jobStatus>;
 
+export const jobKind = z.enum(["production", "render"]);
+export type JobKind = z.infer<typeof jobKind>;
+
+// production/job.json — state of the latest production or render job of a lesson.
+export const jobState = z.object({
+  id: z.string(),
+  kind: jobKind,
+  lessonPath: z.string(),
+  takeId: z.string().nullable(),
+  // QUEUED → ANALYZING → TRANSCRIBING → EDITING → COMPLETED (production)
+  // QUEUED → RENDERING → COMPLETED (render); or FAILED / CANCELLED.
+  status: jobStatus,
+  // Human-readable description of what is happening right now.
+  step: z.string(),
+  // Overall progress of the job, 0..1.
+  progress: z.number(),
+  error: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  finishedAt: z.string().nullable(),
+});
+export type JobState = z.infer<typeof jobState>;
+
+export const TERMINAL_JOB_STATUSES: JobStatus[] = [
+  "COMPLETED",
+  "FAILED",
+  "CANCELLED",
+];
+
+export const isTerminalJobStatus = (status: JobStatus) =>
+  TERMINAL_JOB_STATUSES.includes(status);
+
 export const glossaryTerm = z.object({
   term: z.string(),
   aliases: z.array(z.string()).default([]),
@@ -111,7 +143,10 @@ export const lesson = z.object({
   objectives: z.array(z.string()).default([]),
   notes: z.string().default(""),
   order: z.number().int(),
-  recordingProfile: recordingProfile.default({ webcam: false, microphone: true }),
+  recordingProfile: recordingProfile.default({
+    webcam: false,
+    microphone: true,
+  }),
   postProduction: postProduction.default({
     autoTranscribe: true,
     autoDetectSilence: true,
@@ -163,6 +198,9 @@ export const cutReason = z.enum(["silence", "marker", "trim"]);
 // production/edit-plan.json — the reviewable output of automatic post-production.
 export const editPlan = z.object({
   takeId: z.string(),
+  // Duration of the original take. Optional: plans written before this field
+  // existed fall back to production/analysis.json or the furthest known time.
+  durationMs: z.number().nonnegative().optional(),
   // Ranges of the original take that end up in the video, in order.
   segments: z.array(z.object({ startMs: z.number(), endMs: z.number() })),
   // Suggested cuts; `accepted` cuts are removed from `segments`.
@@ -177,7 +215,9 @@ export const editPlan = z.object({
   // Chapter start times on the original take timeline.
   chapters: z.array(z.object({ timeMs: z.number(), title: z.string() })),
   layout: z.enum(["screen-only", "screen-webcam"]),
-  intro: z.object({ title: z.string(), subtitle: z.string().nullable() }).nullable(),
+  intro: z
+    .object({ title: z.string(), subtitle: z.string().nullable() })
+    .nullable(),
   outro: z.boolean(),
 });
 export type EditPlan = z.infer<typeof editPlan>;
@@ -186,8 +226,11 @@ export type EditPlan = z.infer<typeof editPlan>;
 export const coursePath = (courseId: string) => `${COURSES_DIR}/${courseId}`;
 export const modulePath = (courseId: string, moduleId: string) =>
   `${coursePath(courseId)}/${moduleId}`;
-export const lessonPath = (l: { courseId: string; moduleId: string; id: string }) =>
-  `${modulePath(l.courseId, l.moduleId)}/${l.id}`;
+export const lessonPath = (l: {
+  courseId: string;
+  moduleId: string;
+  id: string;
+}) => `${modulePath(l.courseId, l.moduleId)}/${l.id}`;
 export const takePath = (lessonDir: string, takeId: string) =>
   `${lessonDir}/recordings/${takeId}`;
 export const productionPath = (lessonDir: string) => `${lessonDir}/production`;

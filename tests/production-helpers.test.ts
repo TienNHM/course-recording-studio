@@ -2,6 +2,10 @@ import type { Caption } from "@remotion/captions";
 import { describe, expect, test } from "bun:test";
 import { applyGlossary, applyGlossaryToText } from "../config/autocorrect";
 import { getWhisperModel } from "../config/whisper";
+import {
+  captionList,
+  checkCaptionEdit,
+} from "../scripts/server/production/captions";
 import { parseLastFfmpegTimeMs } from "../scripts/server/production/ffmpeg";
 import {
   getDetectionMinMs,
@@ -194,5 +198,39 @@ describe("thumbnail frame", () => {
     expect(
       getThumbnailFrame({ fps: 30, durationInFrames: 10, hasIntro: false }),
     ).toBe(9);
+  });
+});
+
+describe("checkCaptionEdit", () => {
+  const caption = (text: string, startMs: number, endMs: number) => ({
+    text,
+    startMs,
+    endMs,
+    timestampMs: (startMs + endMs) / 2,
+    confidence: null,
+  });
+  const original = [caption(" Hello", 0, 500), caption(" world", 500, 900)];
+
+  test("accepts text-only edits", () => {
+    expect(
+      checkCaptionEdit(original, [
+        caption(" Hi", 0, 500),
+        caption(" there", 500, 900),
+      ]),
+    ).toBeNull();
+    expect(captionList.parse(original)).toEqual(original);
+  });
+
+  test("rejects timing or count changes", () => {
+    expect(checkCaptionEdit(original, [caption(" Hello", 0, 500)])).toContain(
+      "Expected 2",
+    );
+    expect(
+      checkCaptionEdit(original, [
+        caption(" Hello", 0, 400),
+        caption(" world", 500, 900),
+      ]),
+    ).toContain("Caption 0");
+    expect(checkCaptionEdit(null, [])).not.toBeNull();
   });
 });

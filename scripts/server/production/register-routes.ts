@@ -1,5 +1,6 @@
 import type { Server } from "connect";
 import {
+  CAPTIONS_API,
   EDIT_PLAN_API,
   PRODUCTION_CANCEL,
   PRODUCTION_START,
@@ -7,6 +8,7 @@ import {
   RENDER_LESSON,
 } from "../constants";
 import {
+  handleCaptions,
   handleEditPlan,
   handleProductionCancel,
   handleProductionStart,
@@ -19,5 +21,6 @@ export const registerProductionRoutes = (app: Server) => {
   app.use(PRODUCTION_STATUS, handleProductionStatus);
   app.use(PRODUCTION_CANCEL, handleProductionCancel);
   app.use(EDIT_PLAN_API, handleEditPlan);
+  app.use(CAPTIONS_API, handleCaptions);
   app.use(RENDER_LESSON, handleRenderLesson);
 };

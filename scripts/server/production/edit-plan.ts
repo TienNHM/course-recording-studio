@@ -340,6 +340,7 @@ export const buildEditPlan = (input: BuildEditPlanInput): EditPlan => {
 
   return {
     takeId: input.takeId,
+    durationMs,
     segments,
     cuts: normalized,
     chapters,
@@ -386,7 +387,23 @@ export const applyEditPlanPatch = (
   };
 };
 
-// The EditPlan contract has no duration; fall back to the furthest known time.
+// Duration of the original take for recomputing segments: the plan's own
+// `durationMs`, else production/analysis.json (`analysisDurationMs`, only
+// when it was made for the same take), else the furthest known time.
+export const resolvePlanDurationMs = (
+  plan: EditPlan,
+  analysisDurationMs: number | null,
+): number => {
+  if (plan.durationMs !== undefined) {
+    return plan.durationMs;
+  }
+  if (analysisDurationMs !== null) {
+    return analysisDurationMs;
+  }
+  return inferDurationMs(plan);
+};
+
+// Plans without `durationMs`: fall back to the furthest known time.
 export const inferDurationMs = (plan: EditPlan): number => {
   return Math.max(
     0,

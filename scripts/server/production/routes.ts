@@ -4,14 +4,18 @@
 //   POST PRODUCTION_CANCEL {lessonPath}                 → {cancelled: boolean}
 //   GET  EDIT_PLAN_API     ?lessonPath=                 → EditPlan
 //   PUT  EDIT_PLAN_API     {lessonPath, cuts?, chapters?, layout?, intro?, outro?} → EditPlan
+//   GET  CAPTIONS_API      ?lessonPath=                 → Caption[] (selected take)
+//   PUT  CAPTIONS_API      {lessonPath, captions}       → Caption[] (text edits only)
 //   POST RENDER_LESSON     {lessonPath}                 → JobState
 import type { IncomingMessage, ServerResponse } from "http";
 import { z } from "zod";
 import type { LessonStatus } from "../../../config/course";
 import { editPlan } from "../../../config/course";
+import fs from "fs";
+import { EOL } from "os";
 import { readLesson, updateLesson, writeJsonAtomic } from "../course-store";
 import { runRender } from "../render/render-lesson";
-import { applyEditPlanPatch, inferDurationMs } from "./edit-plan";
+import { applyEditPlanPatch, resolvePlanDurationMs } from "./edit-plan";
 import type { JobState } from "./job-queue";
 import {
   cancelJob,
@@ -20,7 +24,14 @@ import {
   reconcileJobState,
 } from "./job-queue";
 import { runProduction } from "./run-production";
-import { productionFiles, readAnalysis, readEditPlan } from "./take-files";
+import { captionList, checkCaptionEdit } from "./captions";
+import {
+  getTakeFiles,
+  productionFiles,
+  readAnalysis,
+  readCaptions,
+  readEditPlan,
+} from "./take-files";
 
 class HttpError extends Error {
   constructor(
@@ -201,10 +212,10 @@ export const handleEditPlan = handler(["GET", "PUT"], async (req, res) => {
     throw new HttpError(404, "No edit plan yet");
   }
   const analysis = readAnalysis(body.lessonPath);
-  const durationMs =
-    analysis && analysis.takeId === plan.takeId
-      ? analysis.durationMs
-      : inferDurationMs(plan);
+  const durationMs = resolvePlanDurationMs(
+    plan,
+    analysis && analysis.takeId === plan.takeId ? analysis.durationMs : null,
+  );
   let next;
   try {
     next = editPlan.parse(applyEditPlanPatch(plan, body, durationMs));
@@ -213,6 +224,40 @@ export const handleEditPlan = handler(["GET", "PUT"], async (req, res) => {
   }
   writeJsonAtomic(productionFiles(body.lessonPath).editPlan, next);
   sendJson(res, 200, next);
+});
+
+const selectedTakeFiles = (lessonPath: string) => {
+  const lesson = readLesson(lessonPath);
+  if (!lesson.selectedTake) {
+    throw new HttpError(400, "The lesson has no selected take");
+  }
+  return getTakeFiles(lessonPath, lesson.selectedTake);
+};
+
+export const handleCaptions = handler(["GET", "PUT"], async (req, res) => {
+  if (req.method === "GET") {
+    const captions = readCaptions(selectedTakeFiles(queryLessonPath(req)));
+    if (!captions) {
+      throw new HttpError(404, "The selected take has no captions");
+    }
+    sendJson(res, 200, captions);
+    return;
+  }
+
+  const body = parse(
+    z.object({ lessonPath: z.string().min(1), captions: captionList }),
+    await readBody(req),
+  );
+  ensureNoActiveJob(body.lessonPath);
+  const take = selectedTakeFiles(body.lessonPath);
+  const problem = checkCaptionEdit(readCaptions(take), body.captions);
+  if (problem) {
+    throw new HttpError(400, problem);
+  }
+  writeJsonAtomic(take.captions, body.captions);
+  // Same trailing newline as the files written by post-production.
+  fs.appendFileSync(take.captions, EOL);
+  sendJson(res, 200, body.captions);
 });
 
 export const handleRenderLesson = handler(["POST"], async (req, res) => {

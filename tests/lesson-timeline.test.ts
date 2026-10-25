@@ -7,6 +7,7 @@ import {
   mapChapters,
   mapOriginalToOutput,
   mapOriginalToOutputSnapped,
+  mapOutputToOriginal,
   normalizeSegments,
   remapCaptions,
   segmentsToFramePieces,
@@ -69,6 +70,29 @@ describe("mapOriginalToOutput", () => {
     expect(mapOriginalToOutputSnapped(0, segments)).toBe(0);
     expect(mapOriginalToOutputSnapped(4000, segments)).toBe(2000);
     expect(mapOriginalToOutputSnapped(7000, segments)).toBeNull();
+  });
+});
+
+describe("mapOutputToOriginal", () => {
+  test("maps output times back into the kept segments", () => {
+    expect(mapOutputToOriginal(0, segments)).toBe(1000);
+    expect(mapOutputToOriginal(1500, segments)).toBe(2500);
+    expect(mapOutputToOriginal(2000, segments)).toBe(5000);
+    expect(mapOutputToOriginal(2500, segments)).toBe(5500);
+  });
+
+  test("is the inverse of mapOriginalToOutput inside segments", () => {
+    for (const ms of [1000, 1999, 2999, 5000, 5999]) {
+      const out = mapOriginalToOutput(ms, segments) as number;
+      expect(mapOutputToOriginal(out, segments)).toBe(ms);
+    }
+  });
+
+  test("clamps outside the output and handles no segments", () => {
+    expect(mapOutputToOriginal(-100, segments)).toBe(1000);
+    expect(mapOutputToOriginal(3000, segments)).toBe(6000);
+    expect(mapOutputToOriginal(9999, segments)).toBe(6000);
+    expect(mapOutputToOriginal(10, [])).toBeNull();
   });
 });
 

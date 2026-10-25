@@ -6,38 +6,15 @@
 // (GET PRODUCTION_STATUS) and so it survives a page reload.
 import fs from "fs";
 import path from "path";
-import type { JobStatus } from "../../../config/course";
-import { productionPath } from "../../../config/course";
+import type { JobKind, JobState, JobStatus } from "../../../config/course";
+import {
+  isTerminalJobStatus,
+  jobState,
+  productionPath,
+} from "../../../config/course";
 import { readJson, resolvePublicPath, writeJsonAtomic } from "../course-store";
 
-export type JobKind = "production" | "render";
-
-export type JobState = {
-  id: string;
-  kind: JobKind;
-  lessonPath: string;
-  takeId: string | null;
-  // QUEUED → ANALYZING → TRANSCRIBING → EDITING → COMPLETED (production)
-  // QUEUED → RENDERING → COMPLETED (render); or FAILED / CANCELLED.
-  status: JobStatus;
-  // Human-readable description of what is happening right now.
-  step: string;
-  // Overall progress of the job, 0..1.
-  progress: number;
-  error: string | null;
-  createdAt: string;
-  updatedAt: string;
-  finishedAt: string | null;
-};
-
-export const TERMINAL_STATUSES: JobStatus[] = [
-  "COMPLETED",
-  "FAILED",
-  "CANCELLED",
-];
-
-export const isTerminal = (status: JobStatus) =>
-  TERMINAL_STATUSES.includes(status);
+export type { JobKind, JobState };
 
 export const jobFile = (lessonPath: string) =>
   path.join(resolvePublicPath(productionPath(lessonPath)), "job.json");
@@ -47,7 +24,8 @@ export const readJobState = (lessonPath: string): JobState | null => {
   if (!fs.existsSync(file)) {
     return null;
   }
-  return readJson<JobState>(file);
+  const parsed = jobState.safeParse(readJson(file));
+  return parsed.success ? parsed.data : null;
 };
 
 export type JobContext = {
@@ -206,7 +184,7 @@ export const reconcileJobState = (
   onInterrupted: (state: JobState) => void,
 ): JobState | null => {
   const state = readJobState(lessonPath);
-  if (!state || isTerminal(state.status) || active.has(lessonPath)) {
+  if (!state || isTerminalJobStatus(state.status) || active.has(lessonPath)) {
     return state;
   }
   const next: JobState = {

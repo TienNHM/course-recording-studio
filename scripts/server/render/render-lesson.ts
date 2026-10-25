@@ -21,6 +21,7 @@ import {
   readCaptions,
   readEditPlan,
 } from "../production/take-files";
+import { buildPublishedChapters } from "./chapters";
 import { buildTranscriptMarkdown, srtToVtt } from "./subtitles";
 
 export const LESSON_COMPOSITION_ID = "lesson";
@@ -299,7 +300,10 @@ export const runRender = async ({
     }
     const chapters = artifacts.get(CHAPTERS_ARTIFACT);
     if (chapters !== undefined) {
-      fs.writeFileSync(path.join(staging, "chapters.json"), chapters);
+      fs.writeFileSync(
+        path.join(staging, "chapters.json"),
+        buildPublishedChapters(chapters.toString(), plan.intro?.title ?? null),
+      );
     } else {
       console.warn(`The composition emitted no ${CHAPTERS_ARTIFACT} artifact`);
     }

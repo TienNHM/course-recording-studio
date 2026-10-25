@@ -93,6 +93,38 @@ export const mapOriginalToOutput = (
 };
 
 /**
+ * Inverse of mapOriginalToOutput(): maps a time on the output timeline
+ * (concatenated kept segments, without intro) to the original take timeline.
+ * Times before 0 clamp to the first segment start, times after the end clamp
+ * to the end of the last segment. Returns null if there are no segments.
+ */
+export const mapOutputToOriginal = (
+  ms: number,
+  segments: TimelineSegment[],
+): number | null => {
+  const first = segments[0];
+  if (!first) {
+    return null;
+  }
+
+  if (ms <= 0) {
+    return first.startMs;
+  }
+
+  let outputStartMs = 0;
+  for (const segment of segments) {
+    const length = segment.endMs - segment.startMs;
+    if (ms < outputStartMs + length) {
+      return segment.startMs + (ms - outputStartMs);
+    }
+
+    outputStartMs += length;
+  }
+
+  return (segments[segments.length - 1] as TimelineSegment).endMs;
+};
+
+/**
  * Like mapOriginalToOutput(), but a time inside a cut snaps forward
  * to the start of the next kept segment. Returns null if there is no
  * kept segment at or after the time.
