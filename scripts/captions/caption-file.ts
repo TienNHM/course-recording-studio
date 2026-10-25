@@ -1,5 +1,6 @@
+import type { Caption } from "@remotion/captions";
+import type { Language, WhisperModel } from "@remotion/install-whisper-cpp";
 import { toCaptions, transcribe } from "@remotion/install-whisper-cpp";
-import { spawn } from "child_process";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { EOL, tmpdir } from "os";
 import path from "path";
@@ -9,6 +10,37 @@ import {
   WHISPER_PATH,
   WHISPER_REF,
 } from "../../config/whisper";
+import { extractAudio } from "../server/production/ffmpeg";
+
+// Transcribes an existing 16 kHz WAV file into @remotion/captions Caption[].
+export const transcribeWav = async ({
+  wavFile,
+  language,
+  model,
+  onProgress,
+  signal,
+}: {
+  wavFile: string;
+  language: Language | null;
+  model: WhisperModel;
+  onProgress: (progress: number) => void;
+  signal: AbortSignal;
+}): Promise<Caption[]> => {
+  const whisperCppOutput = await transcribe({
+    inputPath: wavFile,
+    model,
+    tokenLevelTimestamps: true,
+    whisperPath: WHISPER_PATH,
+    translateToEnglish: false,
+    printOutput: true,
+    onProgress,
+    signal,
+    language,
+    whisperCppVersion: WHISPER_REF,
+  });
+
+  return toCaptions({ whisperCppOutput }).captions;
+};
 
 export const captionFile = async ({
   file,
@@ -16,6 +48,8 @@ export const captionFile = async ({
   outPath,
   onProgress,
   signal,
+  language = TRANSCRIPTION_LANGUAGE,
+  model = WHISPER_MODEL,
 }: {
   file: string;
   fileToTranscribe: string;
@@ -25,55 +59,38 @@ export const captionFile = async ({
     progressInPercent: number;
   }) => void;
   signal: AbortSignal;
+  language?: Language | null;
+  model?: WhisperModel;
 }): Promise<void> => {
   const tmpDir = path.join(tmpdir(), "remotion-recorder");
 
   if (!existsSync(tmpDir)) {
-    mkdirSync(tmpDir);
+    mkdirSync(tmpDir, { recursive: true });
   }
 
-  const wavFile = path.join(tmpDir, `${file.split(".")[0]}.wav`);
+  const wavFile = path.join(tmpDir, `${path.parse(file).name}.wav`);
 
   onProgress({ filename: file, progressInPercent: 0 });
 
-  // extracting audio from mp4 and save it as 16khz wav file
-  await new Promise<void>((resolve, reject) => {
-    const command = `bunx remotion ffmpeg -hide_banner -i ${fileToTranscribe} -ar 16000 -y ${wavFile}`;
-    const [bin, ...args] = command.split(" ");
-    const child = spawn(bin as string, args, {
-      stdio: "ignore",
-      signal: signal ?? undefined,
+  try {
+    // extracting audio and save it as 16khz wav file
+    await extractAudio({ input: fileToTranscribe, output: wavFile, signal });
+
+    const captions = await transcribeWav({
+      wavFile,
+      language,
+      model,
+      onProgress: (progress) => {
+        onProgress({
+          filename: file,
+          progressInPercent: Math.round(progress * 100),
+        });
+      },
+      signal,
     });
 
-    child.on("exit", (code, signal) => {
-      if (code !== 0) {
-        reject(new Error(`Exit code ${code} (signal ${signal})`));
-        return;
-      }
-      resolve();
-    });
-  });
-
-  const whisperCppOutput = await transcribe({
-    inputPath: wavFile,
-    model: WHISPER_MODEL,
-    tokenLevelTimestamps: true,
-    whisperPath: WHISPER_PATH,
-    translateToEnglish: false,
-    printOutput: true,
-    onProgress: (progress) => {
-      onProgress({
-        filename: file,
-        progressInPercent: Math.round(progress * 100),
-      });
-    },
-    signal: signal,
-    language: TRANSCRIPTION_LANGUAGE,
-    whisperCppVersion: WHISPER_REF,
-  });
-
-  const { captions } = toCaptions({ whisperCppOutput: whisperCppOutput });
-
-  rmSync(wavFile);
-  writeFileSync(outPath, JSON.stringify(captions, null, 2) + EOL);
+    writeFileSync(outPath, JSON.stringify(captions, null, 2) + EOL);
+  } finally {
+    rmSync(wavFile, { force: true });
+  }
 };

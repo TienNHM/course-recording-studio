@@ -1,0 +1,396 @@
+// Pure functions that turn analysis results (silences, markers, captions)
+// into a reviewable EditPlan. No file system access here, so it is unit-testable.
+import type { Caption } from "@remotion/captions";
+import type {
+  EditPlan,
+  Marker,
+  SilencePreset,
+  SilenceRange,
+} from "../../../config/course";
+import { PRESET_MIN_SILENCE_MS } from "./silence";
+
+export type Cut = EditPlan["cuts"][number];
+export type Segment = EditPlan["segments"][number];
+export type Chapter = EditPlan["chapters"][number];
+type CutReason = Cut["reason"];
+
+// Audio kept before a cut starts (tail of the last word before the pause).
+export const KEEP_BEFORE_CUT_MS = 250;
+// Audio kept after a cut ends (lead-in before the next word).
+export const KEEP_AFTER_CUT_MS = 350;
+// Kept segments shorter than this are dropped (they would only be a flash).
+export const MIN_SEGMENT_MS = 500;
+// A "cut" marker without a preceding silence removes at most this much.
+export const MARKER_CUT_LOOKBACK_MS = 15000;
+// A silence this close to the start/end of the take counts as leading/trailing.
+export const EDGE_TOLERANCE_MS = 200;
+
+const REASON_PRIORITY: Record<CutReason, number> = {
+  trim: 3,
+  marker: 2,
+  silence: 1,
+};
+
+const strongerReason = (a: CutReason, b: CutReason): CutReason =>
+  REASON_PRIORITY[a] >= REASON_PRIORITY[b] ? a : b;
+
+const sortByStart = <T extends { startMs: number }>(arr: T[]): T[] =>
+  [...arr].sort((a, b) => a.startMs - b.startMs);
+
+// Merges overlapping or touching cuts (same acceptance state is assumed).
+const mergeCuts = (cuts: Cut[]): Cut[] => {
+  const out: Cut[] = [];
+  for (const cut of sortByStart(cuts)) {
+    const last = out[out.length - 1];
+    if (last && cut.startMs <= last.endMs) {
+      last.endMs = Math.max(last.endMs, cut.endMs);
+      last.reason = strongerReason(last.reason, cut.reason);
+    } else {
+      out.push({ ...cut });
+    }
+  }
+  return out;
+};
+
+// Subtracts `ranges` (sorted, non-overlapping) from [startMs, endMs].
+const subtractRanges = (
+  range: { startMs: number; endMs: number },
+  ranges: { startMs: number; endMs: number }[],
+) => {
+  const pieces: { startMs: number; endMs: number }[] = [];
+  let cursor = range.startMs;
+  for (const r of ranges) {
+    if (r.endMs <= cursor || r.startMs >= range.endMs) {
+      continue;
+    }
+    if (r.startMs > cursor) {
+      pieces.push({ startMs: cursor, endMs: r.startMs });
+    }
+    cursor = Math.max(cursor, r.endMs);
+  }
+  if (cursor < range.endMs) {
+    pieces.push({ startMs: cursor, endMs: range.endMs });
+  }
+  return pieces;
+};
+
+// Normalizes a cut list:
+// - clamps to [0, durationMs] and removes empty cuts
+// - merges overlapping/touching accepted cuts (reason priority trim > marker > silence)
+// - removes the parts of suggestions that are already covered by accepted cuts
+//   (remainders shorter than MIN_SEGMENT_MS are dropped), then merges suggestions
+// - returns everything sorted by start time
+export const normalizeCuts = (cuts: Cut[], durationMs: number): Cut[] => {
+  const clamped = cuts
+    .map((c) => ({
+      ...c,
+      startMs: Math.max(0, Math.min(durationMs, Math.round(c.startMs))),
+      endMs: Math.max(0, Math.min(durationMs, Math.round(c.endMs))),
+    }))
+    .filter((c) => c.endMs > c.startMs);
+
+  const accepted = mergeCuts(clamped.filter((c) => c.accepted));
+  const suggestions = mergeCuts(
+    clamped
+      .filter((c) => !c.accepted)
+      .flatMap((c) =>
+        subtractRanges(c, accepted)
+          .filter((p) => p.endMs - p.startMs >= MIN_SEGMENT_MS)
+          .map((p) => ({ ...c, ...p })),
+      ),
+  );
+  return sortByStart([...accepted, ...suggestions]);
+};
+
+// Kept segments = complement of the accepted cuts within [0, durationMs],
+// without segments shorter than MIN_SEGMENT_MS.
+export const recomputeSegments = (
+  durationMs: number,
+  cuts: Cut[],
+): Segment[] => {
+  if (durationMs <= 0) {
+    return [];
+  }
+  const accepted = mergeCuts(
+    cuts
+      .filter((c) => c.accepted)
+      .map((c) => ({
+        ...c,
+        startMs: Math.max(0, c.startMs),
+        endMs: Math.min(durationMs, c.endMs),
+      }))
+      .filter((c) => c.endMs > c.startMs),
+  );
+  return subtractRanges({ startMs: 0, endMs: durationMs }, accepted).filter(
+    (s) => s.endMs - s.startMs >= MIN_SEGMENT_MS,
+  );
+};
+
+// A chapter that does not fall inside a kept segment moves to the start of the
+// next segment; if there is none it is dropped. Chapters landing on the same
+// time are de-duplicated (the first one wins).
+export const relocateChapters = (
+  chapters: Chapter[],
+  segments: Segment[],
+): Chapter[] => {
+  const out: Chapter[] = [];
+  const sorted = [...chapters].sort((a, b) => a.timeMs - b.timeMs);
+  for (const chapter of sorted) {
+    const inside = segments.some(
+      (s) => chapter.timeMs >= s.startMs && chapter.timeMs < s.endMs,
+    );
+    let timeMs: number | null = chapter.timeMs;
+    if (!inside) {
+      const next = segments.find((s) => s.startMs >= chapter.timeMs);
+      timeMs = next ? next.startMs : null;
+    }
+    if (timeMs === null || out.some((c) => c.timeMs === timeMs)) {
+      continue;
+    }
+    out.push({ timeMs, title: chapter.title });
+  }
+  return out;
+};
+
+const isWord = (c: Caption) => c.text.trim().length > 0;
+
+// Leading/trailing trim. Uses the first/last spoken word when captions exist
+// (like remotion/calculate-metadata/get-start-end-frame.ts), otherwise a
+// silence touching the start/end of the take.
+export const computeTrim = ({
+  durationMs,
+  silences,
+  captions,
+}: {
+  durationMs: number;
+  silences: SilenceRange[];
+  captions: Caption[] | null;
+}): { trimStartMs: number; trimEndMs: number } => {
+  let trimStartMs = 0;
+  let trimEndMs = durationMs;
+
+  const words = (captions ?? []).filter(isWord);
+  const first = words[0];
+  const last = words[words.length - 1];
+
+  if (first && last) {
+    trimStartMs = Math.max(0, first.startMs - KEEP_AFTER_CUT_MS);
+    trimEndMs = Math.min(durationMs, last.endMs + KEEP_BEFORE_CUT_MS);
+  } else {
+    const leading = silences.find((s) => s.startMs <= EDGE_TOLERANCE_MS);
+    if (leading) {
+      trimStartMs = Math.max(0, leading.endMs - KEEP_AFTER_CUT_MS);
+    }
+    const trailing = silences.find(
+      (s) => s.endMs >= durationMs - EDGE_TOLERANCE_MS,
+    );
+    if (trailing) {
+      trimEndMs = Math.min(durationMs, trailing.startMs + KEEP_BEFORE_CUT_MS);
+    }
+  }
+
+  // Never trim the take down to nothing.
+  if (trimEndMs - trimStartMs < MIN_SEGMENT_MS) {
+    return { trimStartMs: 0, trimEndMs: durationMs };
+  }
+  return { trimStartMs, trimEndMs };
+};
+
+// "cut" marker rule: the speaker presses the cut marker right AFTER a mistake,
+// usually after pausing before the mistake. A cut marker at time t removes the
+// span [s, t], where s is the end of the latest silence that ends at or before
+// t and no earlier than t - 15 s. Without such a silence, s = max(0, t - 15 s).
+// These cuts are always accepted (reason "marker").
+export const markerCut = (
+  marker: Marker,
+  silences: SilenceRange[],
+  durationMs: number,
+): Cut | null => {
+  const t = Math.min(marker.timeMs, durationMs);
+  const windowStart = t - MARKER_CUT_LOOKBACK_MS;
+  const preceding = silences
+    .filter((s) => s.endMs <= t && s.endMs >= windowStart)
+    .sort((a, b) => b.endMs - a.endMs)[0];
+  const startMs = preceding ? preceding.endMs : Math.max(0, windowStart);
+  if (t <= startMs) {
+    return null;
+  }
+  return { startMs, endMs: t, reason: "marker", accepted: true };
+};
+
+// Suggested cut for a mid-take silence, keeping a little audio on both sides.
+export const silenceCut = (
+  silence: SilenceRange,
+  accepted: boolean,
+): Cut | null => {
+  const startMs = silence.startMs + KEEP_BEFORE_CUT_MS;
+  const endMs = silence.endMs - KEEP_AFTER_CUT_MS;
+  if (endMs <= startMs) {
+    return null;
+  }
+  return { startMs, endMs, reason: "silence", accepted };
+};
+
+export type BuildEditPlanInput = {
+  takeId: string;
+  durationMs: number;
+  silences: SilenceRange[];
+  markers: Marker[];
+  captions: Caption[] | null;
+  preset: SilencePreset;
+  autoRemoveSilence: boolean;
+  lessonTitle: string;
+  moduleTitle: string | null;
+  courseName: string | null;
+  hasWebcam: boolean;
+  generateChapters: boolean;
+  intro: boolean;
+  outro: boolean;
+};
+
+export const buildChapters = ({
+  markers,
+  generateChapters,
+  lessonTitle,
+}: {
+  markers: Marker[];
+  generateChapters: boolean;
+  lessonTitle: string;
+}): Chapter[] => {
+  const chapterMarkers = markers
+    .filter((m) => m.type === "chapter")
+    .sort((a, b) => a.timeMs - b.timeMs);
+  if (chapterMarkers.length > 0) {
+    return chapterMarkers.map((m, i) => ({
+      timeMs: m.timeMs,
+      title: m.title?.trim() || `Chapter ${i + 1}`,
+    }));
+  }
+  if (generateChapters) {
+    return [{ timeMs: 0, title: lessonTitle }];
+  }
+  return [];
+};
+
+export const buildEditPlan = (input: BuildEditPlanInput): EditPlan => {
+  const durationMs = Math.max(0, Math.round(input.durationMs));
+  const silences = sortByStart(input.silences);
+  const threshold = PRESET_MIN_SILENCE_MS[input.preset];
+
+  const cuts: Cut[] = [];
+
+  // 1. Leading/trailing trim — always accepted.
+  const { trimStartMs, trimEndMs } = computeTrim({
+    durationMs,
+    silences,
+    captions: input.captions,
+  });
+  if (trimStartMs > 0) {
+    cuts.push({
+      startMs: 0,
+      endMs: trimStartMs,
+      reason: "trim",
+      accepted: true,
+    });
+  }
+  if (trimEndMs < durationMs) {
+    cuts.push({
+      startMs: trimEndMs,
+      endMs: durationMs,
+      reason: "trim",
+      accepted: true,
+    });
+  }
+
+  // 2. Long silences — suggestions, accepted only with autoRemoveSilence.
+  for (const silence of silences) {
+    if (silence.endMs - silence.startMs < threshold) {
+      continue;
+    }
+    const cut = silenceCut(silence, input.autoRemoveSilence);
+    if (cut) {
+      cuts.push(cut);
+    }
+  }
+
+  // 3. "cut" markers — always accepted.
+  for (const m of input.markers) {
+    if (m.type !== "cut") {
+      continue;
+    }
+    const cut = markerCut(m, silences, durationMs);
+    if (cut) {
+      cuts.push(cut);
+    }
+  }
+
+  const normalized = normalizeCuts(cuts, durationMs);
+  const segments = recomputeSegments(durationMs, normalized);
+  const chapters = relocateChapters(
+    buildChapters({
+      markers: input.markers,
+      generateChapters: input.generateChapters,
+      lessonTitle: input.lessonTitle,
+    }),
+    segments,
+  );
+
+  const subtitle =
+    [input.courseName, input.moduleTitle].filter(Boolean).join(" · ") || null;
+
+  return {
+    takeId: input.takeId,
+    segments,
+    cuts: normalized,
+    chapters,
+    layout: input.hasWebcam ? "screen-webcam" : "screen-only",
+    intro: input.intro ? { title: input.lessonTitle, subtitle } : null,
+    outro: input.outro,
+  };
+};
+
+export type EditPlanPatch = {
+  cuts?: { index: number; accepted: boolean }[];
+  chapters?: Chapter[];
+  layout?: EditPlan["layout"];
+  intro?: EditPlan["intro"];
+  outro?: boolean;
+};
+
+// Applies a Review UI change and recomputes segments + chapter positions.
+// Cut indices refer to the plan's current `cuts` array. Cuts are not merged
+// here, so indices stay stable across successive edits.
+export const applyEditPlanPatch = (
+  plan: EditPlan,
+  patch: EditPlanPatch,
+  durationMs: number,
+): EditPlan => {
+  const cuts = plan.cuts.map((c) => ({ ...c }));
+  for (const change of patch.cuts ?? []) {
+    const cut = cuts[change.index];
+    if (!cut) {
+      throw new Error(`No cut with index ${change.index}`);
+    }
+    cut.accepted = change.accepted;
+  }
+  const segments = recomputeSegments(durationMs, cuts);
+  const chapters = relocateChapters(patch.chapters ?? plan.chapters, segments);
+  return {
+    ...plan,
+    cuts,
+    segments,
+    chapters,
+    layout: patch.layout ?? plan.layout,
+    intro: patch.intro === undefined ? plan.intro : patch.intro,
+    outro: patch.outro ?? plan.outro,
+  };
+};
+
+// The EditPlan contract has no duration; fall back to the furthest known time.
+export const inferDurationMs = (plan: EditPlan): number => {
+  return Math.max(
+    0,
+    ...plan.segments.map((s) => s.endMs),
+    ...plan.cuts.map((c) => c.endMs),
+  );
+};
