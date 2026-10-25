@@ -7,12 +7,17 @@ import {
 } from "../config/cameras";
 import "./App.css";
 import type { RecordingStatus } from "./RecordButton";
+import { DevicePermission } from "./DevicePermission";
 import { RecordingView } from "./RecordingView";
 import { TopBar } from "./TopBar";
 import { WaitingForDevices } from "./WaitingForDevices";
 import { EnsureBrowserSupport } from "./components/EnsureBrowserSupport";
 import { Button } from "./components/ui/button";
+import { LibraryPage } from "./library/LibraryPage";
+import { ReviewPage } from "./review/ReviewPage";
+import { CurrentLessonProvider } from "./state/current-lesson";
 import { MediaSourcesProvider } from "./state/media-sources";
+import { useView } from "./state/view";
 
 const outer: React.CSSProperties = {
   height: "100%",
@@ -33,7 +38,9 @@ const gridContainer: React.CSSProperties = {
   marginTop: 2,
 };
 
-const App = () => {
+const Recorder: React.FC<{
+  readonly onBackToLibrary: () => void;
+}> = ({ onBackToLibrary }) => {
   const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>({
     type: "idle",
   });
@@ -69,6 +76,7 @@ const App = () => {
               setRecordingStatus={setRecordingStatus}
               recordingStatus={recordingStatus}
               showAllViews={showAllViews}
+              onBackToLibrary={onBackToLibrary}
             />
             <div style={dynamicGridContainer}>
               <RecordingView
@@ -116,6 +124,27 @@ const App = () => {
         </MediaSourcesProvider>
       </WaitingForDevices>
     </EnsureBrowserSupport>
+  );
+};
+
+const App = () => {
+  const [view, setView] = useView();
+  const showLibrary = useCallback(() => setView("library"), [setView]);
+  const showRecorder = useCallback(() => setView("record"), [setView]);
+  const showReview = useCallback(() => setView("review"), [setView]);
+
+  return (
+    <CurrentLessonProvider>
+      {view === "library" ? (
+        <LibraryPage onRecord={showRecorder} onReview={showReview} />
+      ) : view === "review" ? (
+        <ReviewPage onBack={showLibrary} />
+      ) : (
+        <DevicePermission>
+          <Recorder onBackToLibrary={showLibrary} />
+        </DevicePermission>
+      )}
+    </CurrentLessonProvider>
   );
 };
 

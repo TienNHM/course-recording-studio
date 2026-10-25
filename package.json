@@ -33,6 +33,7 @@
     "@remotion/shapes": "^4.0.0",
     "@remotion/streaming": "^4.0.0",
     "@remotion/media": "^4.0.0",
+    "@remotion/player": "^4.0.0",
     "@remotion/studio": "^4.0.0",
     "@remotion/studio-server": "^4.0.0",
     "@remotion/zod-types": "^4.0.0",

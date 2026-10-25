@@ -79,7 +79,7 @@ const cutCaptions = ({
   maxLines: number;
   fontSize: number;
 }): CaptionPage[] => {
-  let textBox = fillTextBox({ maxBoxWidth: boxWidth, maxLines });
+  const textBox = fillTextBox({ maxBoxWidth: boxWidth, maxLines });
   let captionsFitted = 0;
 
   for (const caption of captions) {

@@ -3,6 +3,12 @@ import { videoConf } from "../config/scenes";
 import { GoToRecorder } from "./GoToRecorder";
 import { Main } from "./Main";
 import { calcMetadata } from "./calculate-metadata/calc-metadata";
+import { LessonMain } from "./lesson/LessonMain";
+import {
+  calcLessonMetadata,
+  defaultLessonProps,
+  lessonCompositionSchema,
+} from "./lesson/calc-lesson-metadata";
 
 export const RemotionRoot = () => {
   return (
@@ -81,6 +87,14 @@ export const RemotionRoot = () => {
           platform: "x" as const,
         }}
         calculateMetadata={calcMetadata}
+      />
+      {/* Course Recording Studio: renders one lesson from public/<lessonPath> */}
+      <Composition
+        component={LessonMain}
+        id="lesson"
+        schema={lessonCompositionSchema}
+        defaultProps={defaultLessonProps}
+        calculateMetadata={calcLessonMetadata}
       />
       <Composition
         component={GoToRecorder}

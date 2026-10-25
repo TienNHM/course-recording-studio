@@ -1,20 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { BlinkingCircle } from "./BlinkingCircle";
+import { ArrowLeft } from "lucide-react";
+import React, { useState } from "react";
 import { Logo } from "./Logo";
 import type { RecordingStatus } from "./RecordButton";
 import { RecordButton } from "./RecordButton";
-import { Timer } from "./Timer";
-import { fetchProjectFolders } from "./actions/fetch-project-folders";
-import { NewFolderDialog } from "./components/NewFolderDialog";
 import { ProcessStatus, ProcessingStatus } from "./components/ProcessingStatus";
-import { SelectedFolder } from "./components/SelectedFolder";
 import { UseThisTake } from "./components/UseThisTake";
 import { Button } from "./components/ui/button";
-import {
-  loadFolderFromUrl,
-  loadSelectedFolder,
-  persistSelectedFolder,
-} from "./helpers/get-folders";
+import { useCurrentLesson } from "./state/current-lesson";
 
 const topBarContainer: React.CSSProperties = {
   display: "flex",
@@ -37,43 +29,16 @@ export const TopBar: React.FC<{
   recordingStatus: RecordingStatus;
   setRecordingStatus: React.Dispatch<React.SetStateAction<RecordingStatus>>;
   showAllViews: boolean;
-}> = ({ recordingStatus, setRecordingStatus, showAllViews }) => {
-  const [folders, setFolders] = useState<string[] | null>(null);
+  onBackToLibrary: () => void;
+}> = ({
+  recordingStatus,
+  setRecordingStatus,
+  showAllViews,
+  onBackToLibrary,
+}) => {
+  const { location, lessonPath } = useCurrentLesson();
   const [processingStatus, setProcessingStatus] =
     useState<ProcessStatus | null>(null);
-
-  const folderFromUrl: string | null = useMemo(() => {
-    return loadFolderFromUrl();
-  }, []);
-
-  const [preferredSelectedFolder, setSelectedFolder] = useState<string | null>(
-    folderFromUrl ?? loadSelectedFolder(),
-  );
-
-  const selectedFolder = useMemo(() => {
-    return preferredSelectedFolder ?? folders?.[0] ?? null;
-  }, [folders, preferredSelectedFolder]);
-
-  const refreshFoldersList = useCallback(async () => {
-    const json = await fetchProjectFolders();
-    setFolders(json.folders);
-  }, []);
-
-  useEffect(() => {
-    if (!window.remotionServerEnabled) {
-      return;
-    }
-
-    refreshFoldersList();
-  }, [refreshFoldersList]);
-
-  useEffect(() => {
-    if (!window.remotionServerEnabled) {
-      return;
-    }
-
-    persistSelectedFolder(selectedFolder ?? "");
-  }, [selectedFolder]);
 
   return (
     <div style={topBarContainer}>
@@ -84,16 +49,11 @@ export const TopBar: React.FC<{
           processingStatus={processingStatus}
           setRecordingStatus={setRecordingStatus}
           showAllViews={showAllViews}
+          lessonPath={lessonPath}
         />
-        {recordingStatus.type === "recording" ? (
-          <>
-            <BlinkingCircle />
-            <Timer startDate={recordingStatus.ongoing.startDate} />
-          </>
-        ) : null}
         {recordingStatus.type === "recording-finished" ? (
           <UseThisTake
-            selectedFolder={selectedFolder}
+            lessonPath={lessonPath}
             recordingStatus={recordingStatus}
             setRecordingStatus={setRecordingStatus}
             setStatus={setProcessingStatus}
@@ -105,26 +65,26 @@ export const TopBar: React.FC<{
       </div>
 
       <div style={{ flex: 1 }} />
-      {folders ? (
-        <>
-          <SelectedFolder
-            folders={folders}
-            selectedFolder={selectedFolder}
-            setSelectedFolder={setSelectedFolder}
-          />
-          <NewFolderDialog
-            refreshFoldersList={refreshFoldersList}
-            setSelectedFolder={setSelectedFolder}
-          />
-        </>
-      ) : null}
-      {window.remotionServerEnabled ? (
-        <Button asChild variant="outline">
-          <a href={`http://localhost:3000/${selectedFolder}`} target="_blank">
-            Go to Studio
-          </a>
-        </Button>
-      ) : null}
+      <div className="min-w-0 truncate text-sm">
+        {location ? (
+          <>
+            <span className="text-muted-foreground">
+              {location.course.name} › {location.module.title} ›{" "}
+            </span>
+            <span className="font-medium">{location.lesson.title}</span>
+          </>
+        ) : (
+          <span className="text-muted-foreground">No lesson selected</span>
+        )}
+      </div>
+      <Button
+        variant="outline"
+        onClick={onBackToLibrary}
+        disabled={recordingStatus.type !== "idle"}
+      >
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Library
+      </Button>
     </div>
   );
 };

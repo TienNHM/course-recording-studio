@@ -29,3 +29,7 @@ lambda.ts
 .env
 cut.ts
 normalize.ts
+
+# Course Recording Studio data (recordings are large)
+public/courses
+.claude/worktrees

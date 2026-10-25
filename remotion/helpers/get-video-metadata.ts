@@ -13,8 +13,9 @@ export const getVideoMetadata = async ({
   });
 
   try {
-    const [videoTrack, durationInSeconds] = await Promise.all([
+    const [videoTrack, audioTrack, durationInSeconds] = await Promise.all([
       input.getPrimaryVideoTrack(),
+      input.getPrimaryAudioTrack(),
       includeDuration
         ? input
             .getDurationFromMetadata(undefined, { skipLiveWait: true })
@@ -36,6 +37,7 @@ export const getVideoMetadata = async ({
     return {
       dimensions,
       durationInSeconds,
+      hasAudio: audioTrack !== null,
     };
   } finally {
     input.dispose();
