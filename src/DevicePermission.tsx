@@ -1,69 +1,14 @@
 import type { ReactNode } from "react";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Camera, Mic, ShieldCheck } from "lucide-react";
 import { PermissionError } from "./PermissionError";
-import { CircleSpinner } from "./components/Spinner";
+import { Badge, BadgeTone } from "./components/ui/badge";
+import { Button } from "./components/ui/button";
+import { cn } from "./helpers/utils";
+import { useT } from "./i18n";
+import { RecorderShell } from "./recording/RecorderShell";
 
 type PermissionState = "granted" | "denied" | "prompt" | "initial";
-
-const BORDERRADIUS = 10;
-const largeContainer: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  flexDirection: "column",
-  justifyContent: "center",
-  height: "100%",
-};
-
-const explanationWrapper: React.CSSProperties = {
-  display: "flex",
-  textAlign: "start",
-  paddingLeft: 10,
-};
-
-const explanationContainer: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "flex-start",
-  flexDirection: "column",
-  maxWidth: 800,
-  lineHeight: 2,
-};
-
-const innerContainer: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  flexDirection: "row",
-};
-const container: React.CSSProperties = {
-  borderRadius: BORDERRADIUS,
-  padding: 12,
-  margin: 20,
-};
-
-const title: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "center",
-  fontSize: "1rem",
-};
-
-const textContainer: React.CSSProperties = {
-  paddingLeft: 20,
-  paddingRight: 20,
-  paddingTop: 10,
-  paddingBottom: 10,
-  fontSize: 13,
-};
-
-const peripheralContainer: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  backgroundColor: "#242424",
-  borderRadius: BORDERRADIUS,
-  margin: 10,
-  padding: 16,
-  minWidth: 200,
-  minHeight: 150,
-};
 
 const Permission: React.FC<{
   type: "audio" | "video";
@@ -80,41 +25,7 @@ const Permission: React.FC<{
   onNoDevicesFound,
   requestVideo,
 }) => {
-  const dynamicStyle: React.CSSProperties = useMemo(() => {
-    return {
-      display: "flex",
-      justifyContent: "flex-end",
-      alignItems: "center",
-      color: deviceState === "denied" ? "red" : "white",
-    };
-  }, [deviceState]);
-
-  const microphoneIcon = (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 384 512"
-      style={{ maxHeight: 50 }}
-    >
-      <path
-        fill="white"
-        d="M192 0C139 0 96 43 96 96V256c0 53 43 96 96 96s96-43 96-96V96c0-53-43-96-96-96zM64 216c0-13.3-10.7-24-24-24s-24 10.7-24 24v40c0 89.1 66.2 162.7 152 174.4V464H120c-13.3 0-24 10.7-24 24s10.7 24 24 24h72 72c13.3 0 24-10.7 24-24s-10.7-24-24-24H216V430.4c85.8-11.7 152-85.3 152-174.4V216c0-13.3-10.7-24-24-24s-24 10.7-24 24v40c0 70.7-57.3 128-128 128s-128-57.3-128-128V216z"
-      />
-    </svg>
-  );
-
-  const cameraIcon = (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 576 512 "
-      style={{ maxHeight: 40 }}
-    >
-      <path
-        fill="white"
-        d="M0 128C0 92.7 28.7 64 64 64H320c35.3 0 64 28.7 64 64V384c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V128zM559.1 99.8c10.4 5.6 16.9 16.4 16.9 28.2V384c0 11.8-6.5 22.6-16.9 28.2s-23 5-32.9-1.6l-96-64L416 337.1V320 192 174.9l14.2-9.5 96-64c9.8-6.5 22.4-7.2 32.9-1.6z"
-      />
-    </svg>
-  );
-
+  const t = useT("recording");
   const handleError = useCallback(
     (error: Error) => {
       if (
@@ -198,42 +109,44 @@ const Permission: React.FC<{
     run();
   }, [run]);
 
-  const accessInformation = useMemo(() => {
-    if (deviceState === "prompt") return "Access requested";
-    if (deviceState === "denied") return "Access denied";
-    if (deviceState === "granted") return "Access granted";
-  }, [deviceState]);
-
   if (isInitialState) return null;
-  return (
-    <div style={peripheralContainer}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          flex: 1,
-        }}
-      >
-        {type === "audio" ? microphoneIcon : cameraIcon}
-      </div>
 
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "row",
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <div style={{ width: 16 }} />
-        <div style={dynamicStyle}>{accessInformation} </div>
-        {deviceState === "prompt" ? (
-          <CircleSpinner />
-        ) : (
-          <div style={{ width: 16 }} />
+  const tone: BadgeTone =
+    deviceState === "granted"
+      ? "success"
+      : deviceState === "denied"
+        ? "destructive"
+        : "info";
+
+  return (
+    <div
+      className={cn(
+        "flex flex-1 flex-col items-center gap-3 rounded-lg border bg-background p-5",
+        deviceState === "denied" && "border-destructive/40",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-12 w-12 items-center justify-center rounded-full",
+          deviceState === "denied"
+            ? "bg-destructive/10 text-destructive"
+            : deviceState === "granted"
+              ? "bg-success/10 text-success"
+              : "bg-primary/10 text-primary",
         )}
-      </div>
+      >
+        {type === "audio" ? (
+          <Mic className="h-6 w-6" aria-hidden />
+        ) : (
+          <Camera className="h-6 w-6" aria-hidden />
+        )}
+      </span>
+      <span className="text-label">
+        {type === "audio" ? t("permission.microphone") : t("permission.camera")}
+      </span>
+      <Badge tone={tone} dot pulse={deviceState === "prompt"}>
+        {t(`permission.state.${deviceState}`)}
+      </Badge>
     </div>
   );
 };
@@ -244,6 +157,7 @@ export const DevicePermission: React.FC<{
   children: ReactNode;
   requireCamera: boolean;
 }> = ({ children, requireCamera }) => {
+  const t = useT("recording");
   const [noDeviceFound, setNoDeviceFound] = useState(false);
   const [audioState, setAudioState] = useState<PermissionState>("initial");
   const [videoState, setVideoState] = useState<PermissionState>("initial");
@@ -253,13 +167,6 @@ export const DevicePermission: React.FC<{
       audioState === "initial" || (requireCamera && videoState === "initial")
     );
   }, [audioState, requireCamera, videoState]);
-
-  const dynamicContainer: React.CSSProperties = useMemo(() => {
-    return {
-      ...container,
-      borderColor: isInitialState ? "black" : "white",
-    };
-  }, [isInitialState]);
 
   const onNoDevicesFound = useCallback(() => {
     setNoDeviceFound(true);
@@ -276,10 +183,34 @@ export const DevicePermission: React.FC<{
     return <>{children}</>;
   }
 
+  const anyDenied =
+    audioState === "denied" || (requireCamera && videoState === "denied");
+  const anyPrompt =
+    audioState === "prompt" || (requireCamera && videoState === "prompt");
+
   return (
-    <div style={largeContainer}>
-      <div style={dynamicContainer}>
-        <div style={innerContainer}>
+    <RecorderShell>
+      <div
+        className={cn(
+          "w-full max-w-xl rounded-xl border bg-card p-6 text-card-foreground shadow-sm",
+          isInitialState && "invisible",
+        )}
+        aria-live="polite"
+      >
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <ShieldCheck className="h-5 w-5" aria-hidden />
+          </span>
+          <div>
+            <h2 className="text-title">{t("permission.title")}</h2>
+            <p className="mt-1 text-body text-muted-foreground">
+              {requireCamera
+                ? t("permission.bodyCamera")
+                : t("permission.bodyMic")}
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <Permission
             isInitialState={isInitialState}
             type="audio"
@@ -299,34 +230,31 @@ export const DevicePermission: React.FC<{
             />
           ) : null}
         </div>
-        {isInitialState ? null : (
-          <div style={textContainer}>
-            <div style={explanationContainer}>
-              <div style={title}>
-                {requireCamera
-                  ? "This lesson records your webcam, so the app needs access to your microphone and camera."
-                  : "This app requires access to your microphone."}
-              </div>
-              <div style={explanationWrapper}>
-                1. Click on the padlock/info icon next to the web address in
-                your browser&apos;s address bar.
-              </div>
-              <div style={explanationWrapper}>
-                2. In the dropdown menu that appears, locate the
-                &apos;Permissions&apos; or &apos;Site settings&apos; option.
-              </div>
-              <div style={explanationWrapper}>
-                3. Look for &apos;Camera&apos; and &apos;Microphone&apos;
-                settings and ensure they are set to &apos;Allow&apos; or
-                &apos;Ask&apos;
-              </div>
-              <div style={explanationWrapper}>
-                4. Refresh the page if necessary to apply the changes.
-              </div>
-            </div>
+        {anyPrompt && !anyDenied ? (
+          <p className="mt-4 text-caption text-muted-foreground">
+            {t("permission.promptHint")}
+          </p>
+        ) : null}
+        {anyDenied ? (
+          <div className="mt-5 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+            <h3 className="text-label">{t("permission.deniedTitle")}</h3>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-body text-muted-foreground">
+              <li>{t("permission.steps.one")}</li>
+              <li>{t("permission.steps.two")}</li>
+              <li>{t("permission.steps.three")}</li>
+              <li>{t("permission.steps.four")}</li>
+            </ol>
+            <Button
+              className="mt-3"
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.reload()}
+            >
+              {t("permission.reload")}
+            </Button>
           </div>
-        )}
+        ) : null}
       </div>
-    </div>
+    </RecorderShell>
   );
 };

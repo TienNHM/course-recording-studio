@@ -1,4 +1,3 @@
-import { DialogTitle } from "@radix-ui/react-dialog";
 import React, { useCallback, useMemo } from "react";
 import { Button } from "./components/ui/button";
 import {
@@ -7,6 +6,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogTitle,
 } from "./components/ui/dialog";
 import {
   Select,
@@ -22,6 +22,7 @@ import {
   VIDEO_SIZES,
   VideoSize,
 } from "./helpers/get-selected-video-source";
+import { useFormat, useT } from "./i18n";
 import { setPreferredResolutionForDevice } from "./preferred-resolution";
 
 export const ResolutionLimiter: React.FC<{
@@ -41,6 +42,8 @@ export const ResolutionLimiter: React.FC<{
   open,
   setOpen,
 }) => {
+  const t = useT("recording");
+  const { formatNumber } = useFormat();
   const availableLowerResolutions = useMemo(() => {
     return Object.entries(VIDEO_SIZES).filter(([, value]) => {
       if (maxResolution === null) {
@@ -130,67 +133,72 @@ export const ResolutionLimiter: React.FC<{
 
   const fullResolutionLabel = useMemo(() => {
     if (maxResolution === null) {
-      return "Full resolution";
+      return t("resolution.full");
     }
     const { width, height } = maxResolution;
     if (width && !height) {
-      return `Full resolution (${width}p)`;
+      return t("resolution.fullWithHeight", { height: width });
     }
 
-    return "Full resolution";
-  }, [maxResolution]);
+    return t("resolution.full");
+  }, [maxResolution, t]);
 
-  const labelForFps = useCallback((fps: number | null) => {
-    return fps === null ? "Default" : `At least ${fps} FPS`;
-  }, []);
+  const labelForFps = useCallback(
+    (fps: number | null) => {
+      return fps === null
+        ? t("resolution.fpsDefault")
+        : t("resolution.fpsAtLeast", { fps });
+    },
+    [t],
+  );
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
-            <DialogTitle>Limit resolution</DialogTitle>
+            <DialogTitle>{t("resolution.title")}</DialogTitle>
             <DialogDescription>
-              Constrain the resolution of {deviceName} to a lower value if you
-              experience dropped frames.
+              {t("resolution.description", { device: deviceName })}
             </DialogDescription>
           </DialogHeader>
           <Select onValueChange={onResolutionChange}>
             <SelectTrigger>
               <SelectValue
-                placeholder={sizeConstraint.maxSize ?? fullResolutionLabel}
+                placeholder={
+                  sizeConstraint.maxSize
+                    ? t("resolution.limitTo", { size: sizeConstraint.maxSize })
+                    : fullResolutionLabel
+                }
               />
             </SelectTrigger>
             <SelectContent>
               <SelectItem key={"full"} value={"full"}>
-                <span
-                  style={{
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {fullResolutionLabel}
-                </span>
+                <span className="whitespace-nowrap">{fullResolutionLabel}</span>
               </SelectItem>
               {availableLowerResolutions.map(([key]) => (
                 <SelectItem key={key} value={key}>
-                  <span style={{ whiteSpace: "nowrap" }}>Limit to {key}</span>
+                  <span className="whitespace-nowrap">
+                    {t("resolution.limitTo", { size: key })}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <br />
-          <DialogHeader>
-            <DialogTitle>Minimum frame rate</DialogTitle>
+          <DialogHeader className="pt-2">
+            <DialogTitle>{t("resolution.fpsTitle")}</DialogTitle>
             {maxResolution.frameRate === null ? (
               <DialogDescription>
-                {deviceName} might be able to record in higher FPS, but the
-                resolution might drop.
+                {t("resolution.fpsUnknown", { device: deviceName })}
               </DialogDescription>
             ) : (
               <DialogDescription>
-                {deviceName} can record in up to{" "}
-                {Math.floor(maxResolution.frameRate * 100) / 100} FPS, but this
-                might drop the resolution.
+                {t("resolution.fpsKnown", {
+                  device: deviceName,
+                  fps: formatNumber(
+                    Math.floor(maxResolution.frameRate * 100) / 100,
+                  ),
+                })}
               </DialogDescription>
             )}
           </DialogHeader>
@@ -202,26 +210,20 @@ export const ResolutionLimiter: React.FC<{
             </SelectTrigger>
             <SelectContent>
               <SelectItem key={"any"} value={"any"}>
-                <span
-                  style={{
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Default
+                <span className="whitespace-nowrap">
+                  {t("resolution.fpsDefault")}
                 </span>
               </SelectItem>
               {availableHigherFps.map((key) => (
                 <SelectItem key={key} value={String(key)}>
-                  <span style={{ whiteSpace: "nowrap" }}>
-                    {labelForFps(key)}
-                  </span>
+                  <span className="whitespace-nowrap">{labelForFps(key)}</span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <DialogFooter>
             <Button type="submit" onClick={handleSubmit}>
-              Done
+              {t("resolution.done")}
             </Button>
           </DialogFooter>
         </DialogContent>

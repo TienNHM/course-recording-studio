@@ -1,13 +1,61 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import { AbsoluteFill } from "remotion";
 import { Spinner } from "./components/Spinner";
+import { Button } from "./components/ui/button";
 import type { SelectedSource } from "./helpers/get-selected-video-source";
-import {
-  getCameraStreamConstraints,
-  getVideoStream,
-} from "./helpers/get-video-stream";
+import { getVideoStream } from "./helpers/get-video-stream";
 import { Prefix } from "./helpers/prefixes";
+import { useT } from "./i18n";
 import { useMediaSources } from "./state/media-sources";
+
+// Stream errors are stored as "code:<name>" so they can be shown in the
+// current language; anything else is a raw browser message.
+const STREAM_ERROR_CODES = {
+  NotReadableError: "notReadable",
+  OverconstrainedError: "overconstrained",
+  NotAllowedError: "notAllowed",
+  NotFoundError: "notFound",
+  AbortError: "cancelled",
+} as const;
+
+export const streamErrorCode = (e: Error): string => {
+  const code =
+    STREAM_ERROR_CODES[e.name as keyof typeof STREAM_ERROR_CODES] ?? null;
+  return code ? `code:${code}` : e.message || e.name;
+};
+
+const StreamError: React.FC<{
+  readonly error: string;
+  readonly isScreen: boolean;
+  readonly onRetry: () => void;
+}> = ({ error, isScreen, onRetry }) => {
+  const t = useT("recording");
+  let code = error.startsWith("code:") ? error.slice(5) : null;
+  // Cancelling the screen picker is reported as NotAllowedError
+  if (isScreen && code === "notAllowed") {
+    code = "cancelled";
+  }
+
+  const message =
+    code === "notReadable" ||
+    code === "overconstrained" ||
+    code === "notAllowed" ||
+    code === "notFound" ||
+    code === "cancelled"
+      ? t(`sources.error.${code}`)
+      : t("sources.error.generic", { message: error });
+
+  return (
+    <AbsoluteFill className="items-center justify-center gap-3 bg-muted p-4 text-center">
+      <p className="max-w-sm text-balance text-caption text-muted-foreground">
+        {message}
+      </p>
+      <Button size="sm" variant="outline" onClick={onRetry}>
+        {t("sources.error.retry")}
+      </Button>
+    </AbsoluteFill>
+  );
+};
 
 const container: React.CSSProperties = {
   flex: 1,
@@ -47,11 +95,9 @@ export const Stream: React.FC<{
 
   const videoStyle: React.CSSProperties = useMemo(() => {
     return {
-      opacity: mediaStream ? 1 : 0,
-      height: "100%",
       transform: mirror ? "scaleX(-1)" : undefined,
     };
-  }, [mediaStream, mirror]);
+  }, [mirror]);
 
   useEffect(() => {
     if (mediaStream.streamState.type !== "loaded") {
@@ -144,22 +190,10 @@ export const Stream: React.FC<{
 
         setMediaStream(prefix, { type: "loaded", stream });
       })
-      .catch((e) => {
-        const errMessage =
-          e.name === "NotReadableError"
-            ? "The selected device is not readable. This could be due to another app using this camera."
-            : e.name === "OverconstrainedError"
-              ? `Could not find a resolution satisfying these constraints: ${JSON.stringify(
-                  getCameraStreamConstraints(
-                    selectedVideoSource,
-                    preferPortrait,
-                  ),
-                )}`
-              : e.message || e.name;
-
+      .catch((e: Error) => {
         setMediaStream(prefix, {
           type: "error",
-          error: errMessage,
+          error: streamErrorCode(e),
         });
       });
 
@@ -212,26 +246,30 @@ export const Stream: React.FC<{
     clear();
   }, [clear, prefix, setMediaStream]);
 
+  const isScreen =
+    selectedVideoSource?.type === "display-with-audio" ||
+    selectedVideoSource?.type === "display-without-audio";
+
   return (
     <AbsoluteFill style={container} id={prefix + "-video-container"}>
-      <video ref={sourceRef} muted style={videoStyle} />
-      {mediaStream.streamState.type === "loading" ? <Spinner /> : null}
-      {mediaStream.streamState.type === "error" ? (
-        <AbsoluteFill
-          style={{
-            padding: 20,
-            textWrap: "balance",
-            color: "rgba(255, 255, 255, 0.5)",
-            fontSize: 14,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          {mediaStream.streamState.error}
-          <a className="underline cursor-pointer" onClick={onReset}>
-            Try again
-          </a>
+      <video
+        ref={sourceRef}
+        muted
+        playsInline
+        className="h-full w-full object-contain"
+        style={videoStyle}
+      />
+      {mediaStream.streamState.type === "loading" ? (
+        <AbsoluteFill className="items-center justify-center gap-3 text-muted-foreground">
+          <Spinner />
         </AbsoluteFill>
+      ) : null}
+      {mediaStream.streamState.type === "error" ? (
+        <StreamError
+          error={mediaStream.streamState.error}
+          isScreen={isScreen}
+          onRetry={onReset}
+        />
       ) : null}
     </AbsoluteFill>
   );
