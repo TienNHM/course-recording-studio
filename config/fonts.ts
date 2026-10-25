@@ -1,33 +1,31 @@
 import {
   loadFont as loadRegular,
   fontFamily as regularFont,
-} from "@remotion/google-fonts/Inter";
+} from "@remotion/google-fonts/BeVietnamPro";
 
 import {
   loadFont as loadMonospace,
   fontFamily as monospaceFont,
-} from "@remotion/google-fonts/RobotoMono";
+} from "@remotion/google-fonts/JetBrainsMono";
 
-import {
-  fontFamily as endcardFont,
-  loadFont as loadEndcard,
-} from "@remotion/google-fonts/Inter";
 import { cancelRender, continueRender, delayRender } from "remotion";
 
+// Be Vietnam Pro is designed for Vietnamese diacritics; JetBrains Mono for code.
+// Only the subsets we need are loaded to keep font downloads small.
+const subsets = ["latin", "latin-ext", "vietnamese"] as const;
+
 const regular = loadRegular("normal", {
-  weights: ["600", "700"],
+  weights: ["500", "600", "700"],
+  subsets: [...subsets],
 });
 const monospace = loadMonospace("normal", {
   weights: ["500"],
-});
-const endcard = loadEndcard("normal", {
-  weights: ["500"],
+  subsets: [...subsets],
 });
 
 export const waitForFonts = async () => {
   await regular.waitUntilDone();
   await monospace.waitUntilDone();
-  await endcard.waitUntilDone();
 };
 
 export const REGULAR_FONT: React.CSSProperties = {
@@ -38,7 +36,6 @@ export const REGULAR_FONT: React.CSSProperties = {
 export const MONOSPACE_FONT: React.CSSProperties = {
   fontFamily: monospaceFont,
   fontWeight: 500,
-  fontFeatureSettings: '"ss03" on',
 };
 
 export const TITLE_FONT: React.CSSProperties = {
@@ -47,7 +44,7 @@ export const TITLE_FONT: React.CSSProperties = {
 };
 
 export const ENDCARD_FONT: React.CSSProperties = {
-  fontFamily: endcardFont,
+  fontFamily: regularFont,
   fontWeight: 500,
 };
 
