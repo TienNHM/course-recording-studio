@@ -14,3 +14,9 @@ export const EDIT_PLAN_API = "/api/production/edit-plan";
 export const CAPTIONS_API = "/api/production/captions";
 export const RENDER_LESSON = "/api/render";
 export const DISK_SPACE = "/api/disk-space";
+
+// Automation (MCP server / CLI). IMPORT_RECORDING and PUBLISHED_FILES live
+// under LESSON_API, so they are registered before it.
+export const HEALTH = "/api/health";
+export const IMPORT_RECORDING = "/api/lesson/import-recording";
+export const PUBLISHED_FILES = "/api/lesson/published";

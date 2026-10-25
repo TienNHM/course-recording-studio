@@ -23,6 +23,7 @@ import {
   handleTakeFile,
 } from "./courses";
 import { createProject } from "./create-project";
+import { registerAutomationRoutes } from "./import-recording";
 import { registerProductionRoutes } from "./production/register-routes";
 import { indexHtmlDev } from "./index-html";
 import { getProjectFolder } from "./projects";
@@ -83,6 +84,8 @@ export const startServer = async () => {
   });
 
   app.use(COURSES_API, handleCourses);
+  // Health, recording import and published files (MCP server / CLI).
+  registerAutomationRoutes(app);
   app.use(`${LESSON_API}/take-file`, handleTakeFile);
   app.use(`${LESSON_API}/select-take`, handleSelectTake);
   app.use(LESSON_API, handleLesson);
