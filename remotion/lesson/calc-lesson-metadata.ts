@@ -75,6 +75,7 @@ export const lessonStylePreviewSchema = z.object({
     chapterCards: z.boolean(),
     lowerThird: z.boolean(),
     backgroundMusic: z.boolean(),
+    progressBar: z.boolean(),
   }),
 });
 export type LessonStylePreviewProps = z.infer<typeof lessonStylePreviewSchema>;

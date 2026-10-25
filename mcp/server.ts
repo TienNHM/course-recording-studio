@@ -17,6 +17,7 @@ import {
   cutReason,
   editPlan,
   glossaryTerm,
+  videoStyle,
   lessonStatus,
   marker,
   outputProfile,
@@ -135,6 +136,12 @@ export const toolSchemas = {
       .optional()
       .describe(
         "Replaces the glossary: terms the transcription should spell correctly",
+      ),
+    videoStyle: videoStyle
+      .partial()
+      .optional()
+      .describe(
+        "Look of rendered videos, merged into the current style: palette (dotnet|recorder|ocean|emerald|slate), intro (minimal|gradient|starburst), transition (none|fade|slide|light-leak), chapterCards, lowerThird, backgroundMusic, progressBar",
       ),
   },
   import_recording: {
@@ -518,7 +525,7 @@ export const createStudioMcpServer = (
     {
       title: "Update course (Sửa khóa học)",
       description:
-        "Updates course fields: name, description, language (vi|en), outputProfile, glossary (replaces the list).",
+        "Updates course fields: name, description, language (vi|en), outputProfile, glossary (replaces the list), videoStyle (merged).",
       inputSchema: toolSchemas.update_course,
       annotations: WRITE,
     },

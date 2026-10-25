@@ -90,5 +90,10 @@ export const applyLessonPatch = (l: Lesson, patch: LessonPatch): Lesson => {
 };
 
 export const applyCoursePatch = (c: Course, patch: CoursePatch): Course => {
-  return course.parse({ ...c, ...definedOnly(patch) });
+  const { videoStyle, ...rest } = patch;
+  return course.parse({
+    ...c,
+    ...definedOnly(rest),
+    videoStyle: { ...c.videoStyle, ...definedOnly(videoStyle ?? {}) },
+  });
 };

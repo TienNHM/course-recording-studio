@@ -9,6 +9,7 @@ import {
   outputProfile,
   silencePreset,
   slug,
+  videoStyle,
 } from "../../config/course";
 
 export type CourseTree = {
@@ -58,6 +59,8 @@ export const courseFields = z.object({
   language: courseLanguage,
   outputProfile,
   glossary: z.array(glossaryTerm),
+  // Merged field by field into the course's current style.
+  videoStyle: videoStyle.partial().strict(),
 });
 
 export const coursePatch = courseFields.partial().strict();

@@ -120,7 +120,9 @@ const LessonBody: React.FC<{
         platform="youtube"
         emitSrt={false}
       />
-      <LessonProgressBar chapters={bodyChapters} palette={palette} />
+      {videoStyle.progressBar ? (
+        <LessonProgressBar chapters={bodyChapters} palette={palette} />
+      ) : null}
       {videoStyle.lowerThird && info ? (
         <LowerThird
           courseName={info.courseName}

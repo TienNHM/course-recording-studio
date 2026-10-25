@@ -108,11 +108,13 @@ export const videoStyle = z.object({
   palette: videoPalette.default("dotnet"),
   intro: z.enum(["minimal", "gradient", "starburst"]).default("gradient"),
   transition: z.enum(["none", "fade", "slide", "light-leak"]).default("fade"),
-  // Full-screen title card when a new chapter starts.
+  // Compact chapter card overlaid on the video when a chapter starts.
   chapterCards: z.boolean().default(true),
   // Course/lesson name in a lower third at the start of the lesson.
   lowerThird: z.boolean().default(true),
   backgroundMusic: z.boolean().default(false),
+  // Thin progress bar with chapter ticks along the bottom edge.
+  progressBar: z.boolean().default(true),
 });
 export type VideoStyle = z.infer<typeof videoStyle>;
 
