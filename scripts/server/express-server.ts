@@ -50,6 +50,22 @@ export const startServer = async () => {
       },
     },
     appType: "custom",
+    // The Review page imports the Remotion composition (remotion/**). Vite's
+    // dependency scan misses some of its deps, and the re-optimization it then
+    // triggers needs an HMR reload, which does not reach the page in
+    // middleware mode (duplicate React → "Invalid hook call"). Pre-bundle them.
+    optimizeDeps: {
+      include: [
+        "@remotion/player",
+        "@remotion/google-fonts/Inter",
+        "@remotion/google-fonts/RobotoMono",
+        "@remotion/animation-utils",
+        "@remotion/media",
+        "@remotion/studio",
+        "@remotion/shapes",
+        "@remotion/layout-utils",
+      ],
+    },
     plugins: [react()],
     publicDir,
   });

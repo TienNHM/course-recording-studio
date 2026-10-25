@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type View = "library" | "record";
+export type View = "library" | "record" | "review";
+
+const VIEWS: View[] = ["library", "record", "review"];
 
 const readView = (): View => {
   const view = new URLSearchParams(window.location.search).get("view");
-  return view === "record" ? "record" : "library";
+  return VIEWS.find((v) => v === view) ?? "library";
 };
 
 export const useView = () => {

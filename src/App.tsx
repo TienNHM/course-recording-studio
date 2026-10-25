@@ -14,6 +14,7 @@ import { WaitingForDevices } from "./WaitingForDevices";
 import { EnsureBrowserSupport } from "./components/EnsureBrowserSupport";
 import { Button } from "./components/ui/button";
 import { LibraryPage } from "./library/LibraryPage";
+import { ReviewPage } from "./review/ReviewPage";
 import { CurrentLessonProvider } from "./state/current-lesson";
 import { MediaSourcesProvider } from "./state/media-sources";
 import { useView } from "./state/view";
@@ -130,11 +131,14 @@ const App = () => {
   const [view, setView] = useView();
   const showLibrary = useCallback(() => setView("library"), [setView]);
   const showRecorder = useCallback(() => setView("record"), [setView]);
+  const showReview = useCallback(() => setView("review"), [setView]);
 
   return (
     <CurrentLessonProvider>
       {view === "library" ? (
-        <LibraryPage onRecord={showRecorder} />
+        <LibraryPage onRecord={showRecorder} onReview={showReview} />
+      ) : view === "review" ? (
+        <ReviewPage onBack={showLibrary} />
       ) : (
         <DevicePermission>
           <Recorder onBackToLibrary={showLibrary} />

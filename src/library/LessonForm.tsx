@@ -24,8 +24,7 @@ const POST_PRODUCTION_TOGGLES: [keyof PostProduction, string][] = [
 export const LessonForm: React.FC<{
   readonly lesson: Lesson;
   readonly onSaved: () => Promise<void>;
-  readonly onRecord: (lessonPath: string) => void;
-}> = ({ lesson, onSaved, onRecord }) => {
+}> = ({ lesson, onSaved }) => {
   const [draft, setDraft] = useState<Lesson>(lesson);
   const [busy, setBusy] = useState(false);
   const path = getLessonPath(lesson);
@@ -182,9 +181,6 @@ export const LessonForm: React.FC<{
       <div className="flex gap-2">
         <Button type="submit" disabled={busy || !draft.title.trim()}>
           Save lesson
-        </Button>
-        <Button type="button" variant="outline" onClick={() => onRecord(path)}>
-          Record this lesson
         </Button>
       </div>
     </form>

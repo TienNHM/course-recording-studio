@@ -4,12 +4,14 @@ import { cn } from "../helpers/utils";
 import { findLesson, useCurrentLesson } from "../state/current-lesson";
 import { CourseOutline } from "./CourseOutline";
 import { CourseSettingsDialog } from "./CourseSettingsDialog";
+import { LessonActions } from "./LessonActions";
 import { LessonForm } from "./LessonForm";
 import { NewCourseDialog } from "./NewCourseDialog";
 
 export const LibraryPage: React.FC<{
   readonly onRecord: () => void;
-}> = ({ onRecord }) => {
+  readonly onReview: () => void;
+}> = ({ onRecord, onReview }) => {
   const { tree, error, location, lessonPath, setCurrentLesson, refresh } =
     useCurrentLesson();
   const [courseId, setCourseId] = useState<string | null>(null);
@@ -29,6 +31,14 @@ export const LibraryPage: React.FC<{
       onRecord();
     },
     [onRecord, setCurrentLesson],
+  );
+
+  const onReviewLesson = useCallback(
+    (path: string) => {
+      setCurrentLesson(path);
+      onReview();
+    },
+    [onReview, setCurrentLesson],
   );
 
   return (
@@ -107,11 +117,19 @@ export const LibraryPage: React.FC<{
               <p className="mb-2 text-xs text-muted-foreground">
                 {selected.course.name} › {selected.module.title}
               </p>
+              <div className="mb-5">
+                <LessonActions
+                  key={selectedLessonPath}
+                  lesson={selected.lesson}
+                  onRecord={onRecordLesson}
+                  onReview={onReviewLesson}
+                  onChanged={refresh}
+                />
+              </div>
               <LessonForm
                 key={selectedLessonPath}
                 lesson={selected.lesson}
                 onSaved={refresh}
-                onRecord={onRecordLesson}
               />
             </div>
           ) : (
