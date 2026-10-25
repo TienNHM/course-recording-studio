@@ -27,6 +27,23 @@ Reference: `docs/automation.md` (all tools, CLI commands, HTTP routes).
 - Jobs: one per lesson at a time. Production: `QUEUED → ANALYZING → TRANSCRIBING → EDITING → COMPLETED`;
   render: `QUEUED → RENDERING → COMPLETED`; or `FAILED` / `CANCELLED`.
 
+## Automation (the app acts on its own)
+
+- `postProduction.autoProcess` (default **on**): post-production starts by itself
+  when a take is recorded, imported or dropped in the inbox.
+- `postProduction.autoPublish` (default off): after a COMPLETED post-production
+  the lesson is rendered and PUBLISHED without review. Never after FAILED/CANCELLED.
+- Before starting a job, check `get_pipeline_status` (or `get_job_status`): if a job
+  is already running, wait for it — starting another returns 409.
+- Inbox folder ("drop to publish"): `update_automation_settings {enabled: true}`;
+  files at `<inbox>/<Course title>/<Module title>/<Lesson title>.mp4` (+ optional
+  `<Lesson title>.markers.json`) are imported automatically, then moved to
+  `<inbox>/_imported/` (failures to `_failed/` with `.error.txt`). `get_inbox_status`
+  shows what happened.
+- `process_pending` (use `dryRun: true` first) queues every RECORDED lesson and every
+  REVIEW lesson with autoPublish. Ask before running it without a `courseId` filter.
+- Turn on `autoPublish` only when the user explicitly wants no review.
+
 ## Edit plan semantics
 
 - `cuts[]` each have `reason` (`silence` | `marker` | `trim`) and `accepted`.
@@ -58,6 +75,8 @@ Reference: `docs/automation.md` (all tools, CLI commands, HTTP routes).
 
 Shortcut when the user wants no review: `process_lesson_end_to_end`
 (`course`/`module`/`lesson` titles, `displayPath`, `acceptSilence`, `render`).
+`render` defaults to the lesson's `autoPublish`; pass `render: true` to publish anyway.
+It waits for a job the app already started instead of starting a second one.
 Prompts `produce-lesson` and `review-edit-plan` contain the guided versions.
 
 Waiting tools stop after `timeoutSec` while the job continues; then poll
@@ -71,6 +90,10 @@ npm run studio -- plan courses/c-101/basics/intro
 npm run studio -- plan-update courses/c-101/basics/intro --accept-reason silence --reject 3
 npm run studio -- fix-transcript courses/c-101/basics/intro --replace "dot net=.NET"
 npm run studio -- render courses/c-101/basics/intro
+npm run studio -- pipeline courses/c-101/basics/intro          # current job + what runs next
+npm run studio -- automation --enable                          # inbox folder on
+npm run studio -- inbox                                        # recent automation events
+npm run studio -- process-pending --course c-101 --dry-run
 ```
 
 ## Safety rules
