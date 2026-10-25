@@ -19,6 +19,8 @@ import {
   sortChapterDrafts,
   stepCut,
   validateChapters,
+  draftToChapter,
+  type ChapterDraft,
 } from "../src/review/review-helpers";
 
 const plan: EditPlan = {
@@ -70,7 +72,7 @@ describe("summary", () => {
   });
 
   test("falls back to the furthest known time without durationMs", () => {
-    const { durationMs: _, ...legacy } = plan;
+    const legacy = { ...plan, durationMs: undefined };
     expect(computeReviewSummary(legacy, null).rawMs).toBe(100_000);
   });
 });
@@ -85,13 +87,19 @@ describe("bulk cut actions", () => {
 
   test("reset to the automatic plan", () => {
     const edited = plan.cuts.map((c, i) =>
-      i === 1 ? { ...c, accepted: false } : i === 2 ? { ...c, accepted: true } : c,
+      i === 1
+        ? { ...c, accepted: false }
+        : i === 2
+          ? { ...c, accepted: true }
+          : c,
     );
     expect(resetCutChanges(edited, false)).toEqual([
       { index: 1, accepted: true },
       { index: 2, accepted: false },
     ]);
-    expect(resetCutChanges(edited, true)).toEqual([{ index: 1, accepted: true }]);
+    expect(resetCutChanges(edited, true)).toEqual([
+      { index: 1, accepted: true },
+    ]);
     expect(resetCutChanges(plan.cuts, false)).toEqual([]);
   });
 
@@ -138,7 +146,9 @@ describe("timeline geometry", () => {
       [1, 2],
       [0, 45],
     ]);
-    expect(g.ticks.map((t) => t.ms)).toEqual([0, 25_000, 50_000, 75_000, 100_000]);
+    expect(g.ticks.map((t) => t.ms)).toEqual([
+      0, 25_000, 50_000, 75_000, 100_000,
+    ]);
   });
 
   test("click position → time", () => {
@@ -151,7 +161,9 @@ describe("timeline geometry", () => {
     const intro = 3_000;
     // Intro → first kept frame
     expect(playerMsToOriginalMs(1_000, intro, plan.segments)).toBe(2_000);
-    expect(playerMsToOriginalMs(3_000 + 28_000 + 5_000, intro, plan.segments)).toBe(45_000);
+    expect(
+      playerMsToOriginalMs(3_000 + 28_000 + 5_000, intro, plan.segments),
+    ).toBe(45_000);
     // Outro → end of the last kept part
     expect(playerMsToOriginalMs(999_000, intro, plan.segments)).toBe(90_000);
     expect(originalMsToPlayerMs(45_000, intro, plan.segments)).toBe(36_000);
@@ -162,7 +174,10 @@ describe("timeline geometry", () => {
 });
 
 describe("chapters", () => {
-  const opts = { durationMs: plan.durationMs as number, segments: plan.segments };
+  const opts = {
+    durationMs: plan.durationMs as number,
+    segments: plan.segments,
+  };
 
   test("errors and inside-cut warnings", () => {
     const checks = validateChapters(
@@ -258,23 +273,40 @@ describe("transcript", () => {
     expect(matchesQuery("Đường dẫn", "xyz")).toBe(false);
     expect(matchesQuery("anything", "  ")).toBe(true);
     expect(findRanges("Học Đường đi", "duong")).toEqual([{ start: 4, end: 9 }]);
-    expect(findRanges("cat concat", "cat", true)).toEqual([{ start: 0, end: 3 }]);
+    expect(findRanges("cat concat", "cat", true)).toEqual([
+      { start: 0, end: 3 },
+    ]);
   });
 
   test("tokens mark glossary terms, aliases, low confidence and search", () => {
     const tokens = buildLineTokens(
-      [word("Học"), word(" C", 0.3), word(" sáp"), word(" và"), word(" ASP.NET"), word(" Core")],
+      [
+        word("Học"),
+        word(" C", 0.3),
+        word(" sáp"),
+        word(" và"),
+        word(" ASP.NET"),
+        word(" Core"),
+      ],
       { glossary, query: "và" },
     );
-    const alias = tokens.filter((t) => t.aliasOf === "C#").map((t) => t.text).join("");
+    const alias = tokens
+      .filter((t) => t.aliasOf === "C#")
+      .map((t) => t.text)
+      .join("");
     expect(alias).toBe("C sáp");
     expect(tokens.some((t) => t.text === "C" && t.lowConfidence)).toBe(true);
     expect(tokens.find((t) => t.search)?.text).toBe("và");
     expect(
-      tokens.filter((t) => t.term === "ASP.NET Core").map((t) => t.text).join(""),
+      tokens
+        .filter((t) => t.term === "ASP.NET Core")
+        .map((t) => t.text)
+        .join(""),
     ).toBe("ASP.NET Core");
     // Text is preserved exactly.
-    expect(tokens.map((t) => t.text).join("")).toBe("Học C sáp và ASP.NET Core");
+    expect(tokens.map((t) => t.text).join("")).toBe(
+      "Học C sáp và ASP.NET Core",
+    );
   });
 
   test("fixAliases replaces known misspellings", () => {
@@ -289,13 +321,54 @@ describe("ETA", () => {
   const createdAt = "2026-10-25T10:00:00.000Z";
   const start = Date.parse(createdAt);
   test("extrapolates from progress", () => {
-    expect(estimateRemainingMs({ progress: 0.25, createdAt }, start + 30_000)).toBe(
-      90_000,
-    );
+    expect(
+      estimateRemainingMs({ progress: 0.25, createdAt }, start + 30_000),
+    ).toBe(90_000);
   });
   test("unknown with too little progress or time", () => {
-    expect(estimateRemainingMs({ progress: 0.01, createdAt }, start + 30_000)).toBeNull();
-    expect(estimateRemainingMs({ progress: 0.5, createdAt }, start + 1_000)).toBeNull();
-    expect(estimateRemainingMs({ progress: 1, createdAt }, start + 60_000)).toBeNull();
+    expect(
+      estimateRemainingMs({ progress: 0.01, createdAt }, start + 30_000),
+    ).toBeNull();
+    expect(
+      estimateRemainingMs({ progress: 0.5, createdAt }, start + 1_000),
+    ).toBeNull();
+    expect(
+      estimateRemainingMs({ progress: 1, createdAt }, start + 60_000),
+    ).toBeNull();
+  });
+});
+
+describe("draftToChapter", () => {
+  const draft = (over: Partial<ChapterDraft>): ChapterDraft => ({
+    key: "k",
+    timeMs: 29_650,
+    timeText: "00:29",
+    title: " X ",
+    savedTimeMs: 29_650,
+    requestedTimeMs: 25_000,
+    ...over,
+  });
+
+  test("keeps the requested time of an untouched displaced chapter", () => {
+    expect(draftToChapter(draft({}))).toEqual({
+      timeMs: 29_650,
+      title: "X",
+      requestedTimeMs: 25_000,
+    });
+  });
+
+  test("an edited time replaces the requested time", () => {
+    expect(draftToChapter(draft({ timeMs: 40_000 }))).toEqual({
+      timeMs: 40_000,
+      title: "X",
+    });
+  });
+
+  test("new chapters have no requested time", () => {
+    expect(
+      draftToChapter(
+        draft({ savedTimeMs: undefined, requestedTimeMs: undefined }),
+      ),
+    ).toEqual({ timeMs: 29_650, title: "X" });
   });
 });

@@ -140,20 +140,30 @@ export const relocateChapters = (
   segments: Segment[],
 ): Chapter[] => {
   const out: Chapter[] = [];
-  const sorted = [...chapters].sort((a, b) => a.timeMs - b.timeMs);
+  // Always relocate from the requested time, so undoing a cut moves the
+  // chapter back to where it was asked to start.
+  const sorted = chapters
+    .map((c) => ({ ...c, requestedTimeMs: c.requestedTimeMs ?? c.timeMs }))
+    .sort((a, b) => a.requestedTimeMs - b.requestedTimeMs);
   for (const chapter of sorted) {
+    const requested = chapter.requestedTimeMs;
     const inside = segments.some(
-      (s) => chapter.timeMs >= s.startMs && chapter.timeMs < s.endMs,
+      (s) => requested >= s.startMs && requested < s.endMs,
     );
-    let timeMs: number | null = chapter.timeMs;
+    let timeMs: number | null = requested;
     if (!inside) {
-      const next = segments.find((s) => s.startMs >= chapter.timeMs);
+      const next = segments.find((s) => s.startMs >= requested);
       timeMs = next ? next.startMs : null;
     }
     if (timeMs === null || out.some((c) => c.timeMs === timeMs)) {
       continue;
     }
-    out.push({ timeMs, title: chapter.title });
+    // Remember the requested time only while the chapter is displaced.
+    out.push(
+      timeMs === requested
+        ? { timeMs, title: chapter.title }
+        : { timeMs, title: chapter.title, requestedTimeMs: requested },
+    );
   }
   return out;
 };

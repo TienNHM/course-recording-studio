@@ -231,6 +231,23 @@ export type ChapterDraft = {
   timeMs: number | null;
   timeText: string;
   title: string;
+  /** Server time when the draft was created; detects time edits on save. */
+  savedTimeMs?: number;
+  /** Where a chapter displaced by a cut was asked to start. */
+  requestedTimeMs?: number;
+};
+
+/**
+ * Draft → edit-plan chapter. A chapter the server moved out of a cut keeps
+ * its requested time unless the user changed the time, so undoing the cut
+ * still moves it back; an edited time becomes the new requested time.
+ */
+export const draftToChapter = (d: ChapterDraft) => {
+  const timeMs = d.timeMs as number;
+  const title = d.title.trim();
+  return d.requestedTimeMs !== undefined && d.savedTimeMs === timeMs
+    ? { timeMs, title, requestedTimeMs: d.requestedTimeMs }
+    : { timeMs, title };
 };
 
 export type ChapterError =
@@ -267,7 +284,10 @@ export const validateChapters = (
     let insideCut: ChapterCheck["insideCut"] = null;
     if (draft.timeMs === null) {
       errors.push("invalidTime");
-    } else if (draft.timeMs < 0 || (durationMs > 0 && draft.timeMs > durationMs)) {
+    } else if (
+      draft.timeMs < 0 ||
+      (durationMs > 0 && draft.timeMs > durationMs)
+    ) {
       errors.push("outOfRange");
     } else {
       const moved = effective[i] ?? null;
@@ -300,7 +320,10 @@ export const sortChapterDrafts = <T extends Pick<ChapterDraft, "timeMs">>(
     .map((d, i) => ({ d, i }))
     .sort((a, b) => {
       if (a.d.timeMs === null || b.d.timeMs === null) {
-        return (a.d.timeMs === null ? 1 : 0) - (b.d.timeMs === null ? 1 : 0) || a.i - b.i;
+        return (
+          (a.d.timeMs === null ? 1 : 0) - (b.d.timeMs === null ? 1 : 0) ||
+          a.i - b.i
+        );
       }
       return a.d.timeMs - b.d.timeMs || a.i - b.i;
     })
@@ -318,7 +341,10 @@ export const formatYouTubeChapters = (
   options: { firstTitle?: string } = {},
 ): string => {
   const sorted = [...chapters]
-    .map((c) => ({ seconds: Math.max(0, Math.floor(c.timeMs / 1000)), title: c.title.trim() }))
+    .map((c) => ({
+      seconds: Math.max(0, Math.floor(c.timeMs / 1000)),
+      title: c.title.trim(),
+    }))
     .filter((c) => c.title !== "")
     .sort((a, b) => a.seconds - b.seconds);
   const lines: { seconds: number; title: string }[] = [];
@@ -349,7 +375,9 @@ export const formatYouTubeChapters = (
  * Case- and diacritics-insensitive form of `text` ("Đường" → "duong") plus,
  * for every folded character, the index of the original character.
  */
-export const foldWithMap = (text: string): { folded: string; map: number[] } => {
+export const foldWithMap = (
+  text: string,
+): { folded: string; map: number[] } => {
   let folded = "";
   const map: number[] = [];
   for (let i = 0; i < text.length; i++) {
@@ -401,7 +429,10 @@ export const findRanges = (
       break;
     }
     const endAt = at + n.length;
-    if (!wholeWord || (!isWordChar(folded[at - 1]) && !isWordChar(folded[endAt]))) {
+    if (
+      !wholeWord ||
+      (!isWordChar(folded[at - 1]) && !isWordChar(folded[endAt]))
+    ) {
       ranges.push({
         start: map[at] as number,
         end: (map[endAt - 1] as number) + 1,

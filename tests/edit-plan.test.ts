@@ -293,8 +293,8 @@ describe("relocateChapters", () => {
         segments,
       ),
     ).toEqual([
-      { timeMs: 1000, title: "A" },
-      { timeMs: 8000, title: "B" },
+      { timeMs: 1000, title: "A", requestedTimeMs: 0 },
+      { timeMs: 8000, title: "B", requestedTimeMs: 6000 },
       { timeMs: 9000, title: "C" },
     ]);
   });
@@ -309,7 +309,7 @@ describe("relocateChapters", () => {
         ],
         segments,
       ),
-    ).toEqual([{ timeMs: 8000, title: "B" }]);
+    ).toEqual([{ timeMs: 8000, title: "B", requestedTimeMs: 5500 }]);
   });
 });
 
@@ -347,7 +347,9 @@ describe("buildEditPlan", () => {
     ]);
     expect(plan.segments).toEqual([{ startMs: 2650, endMs: 57_250 }]);
     // Chapter at 0 is inside the trim → moved to the first segment.
-    expect(plan.chapters).toEqual([{ timeMs: 2650, title: "Intro to React" }]);
+    expect(plan.chapters).toEqual([
+      { timeMs: 2650, title: "Intro to React", requestedTimeMs: 0 },
+    ]);
   });
 
   test("balanced + autoRemoveSilence accepts ≥3 s silences", () => {
@@ -459,7 +461,9 @@ describe("buildEditPlan", () => {
         ],
       }),
     );
-    expect(plan.chapters).toEqual([{ timeMs: 30_000, title: "Part 2" }]);
+    expect(plan.chapters).toEqual([
+      { timeMs: 30_000, title: "Part 2", requestedTimeMs: 28_000 },
+    ]);
   });
 
   test("intro subtitle without module/course", () => {
@@ -506,7 +510,35 @@ describe("applyEditPlanPatch", () => {
       { chapters: [{ timeMs: 25_000, title: "X" }] },
       60_000,
     );
-    expect(next.chapters).toEqual([{ timeMs: 29_650, title: "X" }]);
+    expect(next.chapters).toEqual([
+      { timeMs: 29_650, title: "X", requestedTimeMs: 25_000 },
+    ]);
+  });
+
+  test("a chapter moved out of a cut returns when the cut is undone", () => {
+    const plan = buildEditPlan(
+      base({ silences: [{ startMs: 20_000, endMs: 30_000 }] }),
+    );
+    const withChapter = applyEditPlanPatch(
+      plan,
+      { chapters: [{ timeMs: 25_000, title: "X" }] },
+      60_000,
+    );
+    expect(withChapter.chapters).toEqual([{ timeMs: 25_000, title: "X" }]);
+    const cut = applyEditPlanPatch(
+      withChapter,
+      { cuts: [{ index: 0, accepted: true }] },
+      60_000,
+    );
+    expect(cut.chapters).toEqual([
+      { timeMs: 29_650, title: "X", requestedTimeMs: 25_000 },
+    ]);
+    const undone = applyEditPlanPatch(
+      cut,
+      { cuts: [{ index: 0, accepted: false }] },
+      60_000,
+    );
+    expect(undone.chapters).toEqual([{ timeMs: 25_000, title: "X" }]);
   });
 
   test("unknown cut index throws", () => {

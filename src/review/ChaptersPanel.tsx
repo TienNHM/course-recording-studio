@@ -13,6 +13,7 @@ import {
   validateChapters,
   type Chapter,
   type ChapterDraft,
+  draftToChapter,
 } from "./review-helpers";
 import { parseTimecode } from "./timecode";
 import { useClipboard } from "./use-clipboard";
@@ -64,6 +65,8 @@ export const ChaptersPanel: React.FC<{
         timeMs: c.timeMs,
         timeText: f.formatDuration(c.timeMs),
         title: c.title,
+        savedTimeMs: c.timeMs,
+        requestedTimeMs: c.requestedTimeMs,
       })),
     );
 
@@ -110,7 +113,9 @@ export const ChaptersPanel: React.FC<{
   const hasErrors = checks.some((c) => c.errors.length > 0);
 
   const update = (key: string, patch: Partial<ChapterDraft>) =>
-    setDrafts((all) => all.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+    setDrafts((all) =>
+      all.map((d) => (d.key === key ? { ...d, ...patch } : d)),
+    );
 
   const addAtPlayhead = () => {
     const ms = getPlayheadMs();
@@ -138,12 +143,7 @@ export const ChaptersPanel: React.FC<{
     }
     setSaving(true);
     try {
-      await onSave(
-        sortChapterDrafts(drafts).map((d) => ({
-          timeMs: d.timeMs as number,
-          title: d.title.trim(),
-        })),
-      );
+      await onSave(sortChapterDrafts(drafts).map(draftToChapter));
     } finally {
       setSaving(false);
     }
@@ -187,7 +187,11 @@ export const ChaptersPanel: React.FC<{
             return (
               <li key={d.key} className="grid gap-1">
                 <div className="flex items-center gap-2">
-                  <Tooltip content={t("chapters.seek")} side="top" align="start">
+                  <Tooltip
+                    content={t("chapters.seek")}
+                    side="top"
+                    align="start"
+                  >
                     <Button
                       type="button"
                       size="icon-sm"
@@ -234,7 +238,11 @@ export const ChaptersPanel: React.FC<{
                       }
                     }}
                   />
-                  <Tooltip content={t("chapters.delete")} side="top" align="end">
+                  <Tooltip
+                    content={t("chapters.delete")}
+                    side="top"
+                    align="end"
+                  >
                     <Button
                       type="button"
                       size="icon-sm"
@@ -332,7 +340,9 @@ export const ChaptersPanel: React.FC<{
         </div>
       ) : null}
       {clipboard.error ? (
-        <p className="text-caption text-destructive">{t("published.copyFailed")}</p>
+        <p className="text-caption text-destructive">
+          {t("published.copyFailed")}
+        </p>
       ) : null}
     </Panel>
   );

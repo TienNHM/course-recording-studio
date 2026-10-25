@@ -246,7 +246,15 @@ export const editPlan = z.object({
     }),
   ),
   // Chapter start times on the original take timeline.
-  chapters: z.array(z.object({ timeMs: z.number(), title: z.string() })),
+  chapters: z.array(
+    z.object({
+      timeMs: z.number(),
+      title: z.string(),
+      // Where the chapter was asked to start (marker or user edit). timeMs may
+      // be moved out of a cut; it moves back here once that cut is undone.
+      requestedTimeMs: z.number().optional(),
+    }),
+  ),
   layout: z.enum(["screen-only", "screen-webcam"]),
   intro: z
     .object({ title: z.string(), subtitle: z.string().nullable() })
