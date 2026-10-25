@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "course-studio": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["mcp/index.ts"],
+      "env": {
+        "COURSE_STUDIO_URL": "${COURSE_STUDIO_URL:-http://localhost:4000}"
+      }
+    }
+  }
+}
