@@ -94,6 +94,30 @@ export const OUTPUT_PROFILES: Record<
   "course-hq": { width: 1920, height: 1080, fps: 60 },
 };
 
+// Look of the rendered video. Palette ids match the app's UI palettes.
+export const videoPalette = z.enum([
+  "dotnet",
+  "recorder",
+  "ocean",
+  "emerald",
+  "slate",
+]);
+export type VideoPalette = z.infer<typeof videoPalette>;
+
+export const videoStyle = z.object({
+  palette: videoPalette.default("dotnet"),
+  intro: z.enum(["minimal", "gradient", "starburst"]).default("gradient"),
+  transition: z.enum(["none", "fade", "slide", "light-leak"]).default("fade"),
+  // Full-screen title card when a new chapter starts.
+  chapterCards: z.boolean().default(true),
+  // Course/lesson name in a lower third at the start of the lesson.
+  lowerThird: z.boolean().default(true),
+  backgroundMusic: z.boolean().default(false),
+});
+export type VideoStyle = z.infer<typeof videoStyle>;
+
+export const DEFAULT_VIDEO_STYLE: VideoStyle = videoStyle.parse({});
+
 export const course = z.object({
   id: slug,
   name: z.string().min(1),
@@ -101,6 +125,7 @@ export const course = z.object({
   language: courseLanguage.default("vi"),
   outputProfile: outputProfile.default("course-standard"),
   glossary: z.array(glossaryTerm).default([]),
+  videoStyle: videoStyle.default(DEFAULT_VIDEO_STYLE),
   createdAt: z.string(),
 });
 export type Course = z.infer<typeof course>;
@@ -131,6 +156,10 @@ export const postProduction = z.object({
   generateChapters: z.boolean().default(true),
   intro: z.boolean().default(true),
   outro: z.boolean().default(true),
+  // Start post-production as soon as a take is saved.
+  autoProcess: z.boolean().default(true),
+  // Render and publish right after post-production, skipping review.
+  autoPublish: z.boolean().default(false),
 });
 export type PostProduction = z.infer<typeof postProduction>;
 
@@ -155,6 +184,8 @@ export const lesson = z.object({
     generateChapters: true,
     intro: true,
     outro: true,
+    autoProcess: true,
+    autoPublish: false,
   }),
   status: lessonStatus.default("DRAFT"),
   // Take id = the take's shared end timestamp (ms), as used by the recorder.
