@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { applyThemeToDocument } from "../theme/preferences";
 
 // Document Picture-in-Picture (Chrome/Edge 116+): an always-on-top window
 // that stays visible while the user works in another app.
@@ -43,8 +44,8 @@ const copyStyles = (target: Window) => {
     }
   }
 
-  target.document.documentElement.className =
-    document.documentElement.className;
+  // Mode class, data-palette and lang (live updates: useThemeMirror)
+  applyThemeToDocument(target.document);
   target.document.title = "Recording controls";
   target.document.body.className = "bg-background text-foreground";
   target.document.body.style.margin = "0";

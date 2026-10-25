@@ -15,6 +15,7 @@ import { EnsureBrowserSupport } from "./components/EnsureBrowserSupport";
 import { Button } from "./components/ui/button";
 import { LibraryPage } from "./library/LibraryPage";
 import { ReviewPage } from "./review/ReviewPage";
+import { StyleguidePage } from "./styleguide/StyleguidePage";
 import {
   CurrentLessonProvider,
   useCurrentLesson,
@@ -157,6 +158,8 @@ const App = () => {
         <LibraryPage onRecord={showRecorder} onReview={showReview} />
       ) : view === "review" ? (
         <ReviewPage onBack={showLibrary} />
+      ) : view === "styleguide" ? (
+        <StyleguidePage onBack={showLibrary} />
       ) : (
         <RecordView onBackToLibrary={showLibrary} />
       )}

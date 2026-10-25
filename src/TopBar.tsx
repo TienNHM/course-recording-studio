@@ -5,6 +5,7 @@ import type { RecordingStatus } from "./RecordButton";
 import { RecordButton } from "./RecordButton";
 import { ProcessStatus, ProcessingStatus } from "./components/ProcessingStatus";
 import { UseThisTake } from "./components/UseThisTake";
+import { SettingsButton } from "./components/settings/SettingsDialog";
 import { Button } from "./components/ui/button";
 import { useCurrentLesson } from "./state/current-lesson";
 
@@ -85,6 +86,7 @@ export const TopBar: React.FC<{
         <ArrowLeft className="mr-2 h-4 w-4" />
         Library
       </Button>
+      <SettingsButton />
     </div>
   );
 };

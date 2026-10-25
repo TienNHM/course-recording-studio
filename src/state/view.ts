@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 
-export type View = "library" | "record" | "review";
+export type View = "library" | "record" | "review" | "styleguide";
 
-const VIEWS: View[] = ["library", "record", "review"];
+const VIEWS: View[] = ["library", "record", "review", "styleguide"];
+
+// Fired after pushState so every useView() instance (App, AppHeader,
+// Settings dialog...) sees the change, not only the caller.
+const VIEW_CHANGE_EVENT = "crs:viewchange";
 
 const readView = (): View => {
   const view = new URLSearchParams(window.location.search).get("view");
@@ -13,9 +17,13 @@ export const useView = () => {
   const [view, setViewState] = useState<View>(readView);
 
   useEffect(() => {
-    const onPopState = () => setViewState(readView());
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    const onChange = () => setViewState(readView());
+    window.addEventListener("popstate", onChange);
+    window.addEventListener(VIEW_CHANGE_EVENT, onChange);
+    return () => {
+      window.removeEventListener("popstate", onChange);
+      window.removeEventListener(VIEW_CHANGE_EVENT, onChange);
+    };
   }, []);
 
   const setView = useCallback((next: View) => {
@@ -23,6 +31,7 @@ export const useView = () => {
     url.searchParams.set("view", next);
     window.history.pushState({}, "", url);
     setViewState(next);
+    window.dispatchEvent(new Event(VIEW_CHANGE_EVENT));
   }, []);
 
   return [view, setView] as const;

@@ -1,4 +1,5 @@
 import type { Caption } from "@remotion/captions";
+import { SettingsButton } from "../components/settings/SettingsDialog";
 import { ArrowLeft } from "lucide-react";
 import React, {
   useCallback,
@@ -229,6 +230,8 @@ export const ReviewPage: React.FC<{
           </span>
         ) : null}
         {lesson ? <StatusBadge status={lesson.status} /> : null}
+        <div className="flex-1" />
+        <SettingsButton />
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         {lesson && lessonPath ? (

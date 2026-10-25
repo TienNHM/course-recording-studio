@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from "react";
 import { Logo } from "../Logo";
+import { SettingsButton } from "../components/settings/SettingsDialog";
 import { cn } from "../helpers/utils";
 import { findLesson, useCurrentLesson } from "../state/current-lesson";
 import { CourseOutline } from "./CourseOutline";
@@ -62,6 +63,7 @@ export const LibraryPage: React.FC<{
             setCourseId(created.id);
           }}
         />
+        <SettingsButton />
       </header>
       {error ? <div className="p-4 text-sm text-red-400">{error}</div> : null}
       <div className="flex min-h-0 flex-1">
