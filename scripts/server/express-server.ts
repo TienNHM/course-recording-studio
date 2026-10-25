@@ -7,11 +7,21 @@ import { createServer } from "vite";
 import { SERVER_PORT } from "../../config/server";
 import {
   CANCEL_TRANSCRIBE,
+  COURSES_API,
   CREATE_FOLDER,
+  DISK_SPACE,
   GET_FOLDERS,
+  LESSON_API,
   TRANSCRIBE_VIDEO,
   UPLOAD_VIDEO,
 } from "./constants";
+import {
+  handleCourses,
+  handleDiskSpace,
+  handleLesson,
+  handleSelectTake,
+  handleTakeFile,
+} from "./courses";
 import { createProject } from "./create-project";
 import { indexHtmlDev } from "./index-html";
 import { getProjectFolder } from "./projects";
@@ -55,6 +65,11 @@ export const startServer = async () => {
     createProject(req, res, rootDir);
   });
 
+  app.use(COURSES_API, handleCourses);
+  app.use(`${LESSON_API}/take-file`, handleTakeFile);
+  app.use(`${LESSON_API}/select-take`, handleSelectTake);
+  app.use(LESSON_API, handleLesson);
+  app.use(DISK_SPACE, handleDiskSpace);
   app.use(UPLOAD_VIDEO, handleVideoUpload);
   app.use(TRANSCRIBE_VIDEO, handleTranscribeVideo);
   app.use(CANCEL_TRANSCRIBE, handleCancelTranscription);

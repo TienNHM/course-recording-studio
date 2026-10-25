@@ -1,7 +1,17 @@
 import fs, { createWriteStream } from "fs";
 import { IncomingMessage, ServerResponse } from "http";
 import path from "path";
+import { ZodError, prettifyError, z } from "zod";
+import {
+  ALTERNATIVE1_PREFIX,
+  ALTERNATIVE2_PREFIX,
+  DISPLAY_PREFIX,
+  WEBCAM_PREFIX,
+} from "../../config/cameras";
+import { takePath } from "../../config/course";
 import { ensureWhisper } from "../captions/install-whisper";
+import { lessonPathParam, takeIdParam } from "./course-api";
+import { resolvePublicPath } from "./course-store";
 import { makeStreamPayload } from "./streaming";
 import { transcribeVideo } from "./transcribe-video";
 
@@ -111,41 +121,65 @@ export const handleCancelTranscription = async (
   }
 };
 
+const lessonUploadParams = z.object({
+  lessonPath: lessonPathParam,
+  takeId: takeIdParam,
+  prefix: z.enum([
+    WEBCAM_PREFIX,
+    DISPLAY_PREFIX,
+    ALTERNATIVE1_PREFIX,
+    ALTERNATIVE2_PREFIX,
+  ]),
+  extension: z.enum(["mp4", "webm"]),
+});
+
+const getUploadPath = (params: URLSearchParams) => {
+  if (params.has("lessonPath")) {
+    const { lessonPath, takeId, prefix, extension } = lessonUploadParams.parse(
+      Object.fromEntries(params),
+    );
+    if (
+      !fs.existsSync(path.join(resolvePublicPath(lessonPath), "lesson.json"))
+    ) {
+      throw new Error(`Lesson ${lessonPath} does not exist`);
+    }
+
+    return path.join(
+      resolvePublicPath(takePath(lessonPath, takeId)),
+      `${prefix}.${extension}`,
+    );
+  }
+
+  const endDateAsString = params.get("endDateAsString");
+  const folder = params.get("folder");
+  const prefix = params.get("prefix");
+  const extension = params.get("extension");
+
+  if (typeof prefix !== "string") {
+    throw new Error("No `prefix` provided");
+  }
+
+  if (typeof endDateAsString !== "string") {
+    throw new Error("No `endDate` provided");
+  }
+
+  if (typeof folder !== "string") {
+    throw new Error("No `folder` provided");
+  }
+
+  const file = `${prefix}${endDateAsString}.${extension}`;
+  return path.join(process.cwd(), "public", folder, file);
+};
+
 export const handleVideoUpload = async (
   req: IncomingMessage,
   res: ServerResponse,
 ) => {
   const url = req.url as string;
   const params = new URLSearchParams(url.substring(1));
-  const endDateAsString = params.get("endDateAsString");
-  const folder = params.get("folder");
-  const prefix = params.get("prefix");
-  const extension = params.get("extension");
-  const expectedFrames = Number(params.get("expectedFrames"));
   try {
-    if (typeof prefix !== "string") {
-      throw new Error("No `prefix` provided");
-    }
+    const filePath = getUploadPath(params);
 
-    if (typeof endDateAsString !== "string") {
-      throw new Error("No `endDate` provided");
-    }
-
-    if (typeof folder !== "string") {
-      throw new Error("No `folder` provided");
-    }
-
-    if (typeof expectedFrames !== "number") {
-      throw new Error("No `expectedFrames` provided");
-    }
-
-    const file = `${prefix}${endDateAsString}.${extension}`;
-
-    const publicDir = path.join(process.cwd(), "public");
-    const folderPath = path.join(publicDir, folder);
-    const filePath = path.join(folderPath, file);
-
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
 
     const writeStream = createWriteStream(filePath);
@@ -161,6 +195,12 @@ export const handleVideoUpload = async (
     res.statusCode = 200;
     res.end();
   } catch (e) {
+    if (e instanceof ZodError) {
+      res.statusCode = 400;
+      res.end(JSON.stringify({ error: prettifyError(e) }));
+      return;
+    }
+
     console.error(e);
     res.statusCode = 500;
     res.end(JSON.stringify({ error: (e as Error).message }));

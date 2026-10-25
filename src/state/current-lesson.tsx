@@ -1,0 +1,129 @@
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import type { Course, CourseModule, Lesson } from "../../config/course";
+import { lessonPath as getLessonPath } from "../../config/course";
+import type { CourseTree } from "../../scripts/server/course-api";
+import { fetchCourseTree } from "../actions/courses";
+
+const STORAGE_KEY = "courserecordingstudio.lessonPath";
+
+const loadLessonPath = (): string | null => {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+};
+
+const persistLessonPath = (value: string | null) => {
+  try {
+    if (value) {
+      window.localStorage.setItem(STORAGE_KEY, value);
+    } else {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch {
+    // Storage may be unavailable (private mode); the selection is then per-session.
+  }
+};
+
+export type LessonLocation = {
+  course: Course;
+  module: CourseModule;
+  lesson: Lesson;
+};
+
+export const findLesson = (
+  tree: CourseTree,
+  path: string,
+): LessonLocation | null => {
+  for (const { course, modules } of tree) {
+    for (const { module, lessons } of modules) {
+      const found = lessons.find((l) => getLessonPath(l) === path);
+      if (found) {
+        return { course, module, lesson: found };
+      }
+    }
+  }
+
+  return null;
+};
+
+type CurrentLessonContextType = {
+  tree: CourseTree | null;
+  error: string | null;
+  lesson: Lesson | null;
+  location: LessonLocation | null;
+  lessonPath: string | null;
+  setCurrentLesson: (lessonPath: string | null) => void;
+  refresh: () => Promise<void>;
+};
+
+const CurrentLessonContext =
+  React.createContext<CurrentLessonContextType | null>(null);
+
+export const CurrentLessonProvider: React.FC<{
+  readonly children: React.ReactNode;
+}> = ({ children }) => {
+  const [tree, setTree] = useState<CourseTree | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lessonPath, setLessonPath] = useState<string | null>(loadLessonPath);
+
+  const refresh = useCallback(async () => {
+    if (!window.remotionServerEnabled) {
+      setError("The local server is not running.");
+      return;
+    }
+
+    try {
+      setTree(await fetchCourseTree());
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const setCurrentLesson = useCallback((value: string | null) => {
+    setLessonPath(value);
+    persistLessonPath(value);
+  }, []);
+
+  const value = useMemo((): CurrentLessonContextType => {
+    const location = tree && lessonPath ? findLesson(tree, lessonPath) : null;
+    return {
+      tree,
+      error,
+      location,
+      lesson: location?.lesson ?? null,
+      lessonPath: location ? lessonPath : null,
+      setCurrentLesson,
+      refresh,
+    };
+  }, [error, lessonPath, refresh, setCurrentLesson, tree]);
+
+  return (
+    <CurrentLessonContext.Provider value={value}>
+      {children}
+    </CurrentLessonContext.Provider>
+  );
+};
+
+export const useCurrentLesson = () => {
+  const ctx = useContext(CurrentLessonContext);
+  if (!ctx) {
+    throw new Error(
+      "useCurrentLesson() must be used within CurrentLessonProvider",
+    );
+  }
+
+  return ctx;
+};
