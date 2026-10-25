@@ -16,6 +16,8 @@ const mediaRecorderOptions: MediaRecorderOptions = {
 
 export type FinishedRecording = {
   prefix: string;
+  // Name of the recording in the Origin Private File System
+  filename: string;
   data: () => Promise<Blob>;
   releaseData: () => Promise<void>;
   endDate: number;
@@ -51,7 +53,7 @@ export const startMediaRecorder = async ({
     source.stream,
     completeMediaRecorderOptions,
   );
-  const writer = await createFileStorage(`${filename}`);
+  const writer = await createFileStorage(filename, mimeType);
 
   const periodicSaveController = new AbortController();
 
@@ -104,6 +106,7 @@ export const startMediaRecorder = async ({
             );
             resolve({
               prefix,
+              filename,
               data: () => writer.save(),
               endDate: Date.now(),
               releaseData: () => writer.release(),
@@ -137,8 +140,28 @@ export const startMediaRecorder = async ({
     );
   }
 
+  const pause = () => {
+    if (recorder.state === "recording") {
+      recorder.pause();
+    }
+  };
+
+  const resume = () => {
+    if (recorder.state === "paused") {
+      recorder.resume();
+    }
+  };
+
   // Trigger a save every 10 seconds
   recorder.start(10_000);
 
-  return { recorder, stopAndWaitUntilDone: stopRecorder, mimeType };
+  return {
+    recorder,
+    stopAndWaitUntilDone: stopRecorder,
+    mimeType,
+    prefix,
+    filename,
+    pause,
+    resume,
+  };
 };
