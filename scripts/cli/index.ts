@@ -48,6 +48,7 @@ Commands
                 [--transcribe true|false] [--detect-silence true|false] [--remove-silence true|false]
                 [--silence-preset conservative|balanced|aggressive] [--chapters-auto true|false]
                 [--intro true|false] [--outro true|false] [--webcam true|false]
+                [--auto-process true|false] [--auto-publish true|false]
   update-course --course <id> [--name] [--language vi|en] [--output-profile course-standard|course-hq]
                 [--glossary "Term1,Term2"]
   import <lesson> --file <abs path> [--webcam-file <abs path>] [--markers markers.json] [--take-id <digits>]
@@ -63,7 +64,17 @@ Commands
   render <lesson> [--no-wait] [--timeout <sec>]
   published <lesson>                   Published files (absolute paths + URLs)
   process <lesson> [--file <abs path>] [--webcam-file <p>] [--markers <json>] [--no-transcribe]
-                [--accept-silence] [--render] [--timeout <sec>]    The whole pipeline in one go
+                [--accept-silence] [--render | --no-render] [--timeout <sec>]    The whole pipeline in one go
+                (renders when --render is given or the lesson's autoPublish is on)
+
+Automation
+  pipeline <lesson>                    Current job and what runs next (autoProcess / autoPublish)
+  automation [--enable | --disable] [--inbox <abs folder> | --inbox-default]
+                                       Show or change the inbox ("drop to publish") settings
+  inbox [--limit <n>]                  Inbox watcher state and recent automation events
+  process-pending [--course <id>] [--lesson-path <p> ...] [--dry-run]
+                                       Post-production for RECORDED lessons, render for REVIEW
+                                       lessons with autoPublish on
 
 Global options
   --json            Machine-readable JSON on stdout (progress goes to stderr)
@@ -201,6 +212,8 @@ const lessonPatchFromArgs = (args: ParsedArgs): LessonPatch => {
     "chapters-auto": "generateChapters",
     intro: "intro",
     outro: "outro",
+    "auto-process": "autoProcess",
+    "auto-publish": "autoPublish",
   } as const;
   for (const [flag, field] of Object.entries(map)) {
     const value = getBool(args, flag);
@@ -497,7 +510,8 @@ export const runCommand = async (
           acceptSuggestions: getBool(args, "accept-silence")
             ? ["silence"]
             : undefined,
-          render: getBool(args, "render") ?? false,
+          // Default: the lesson's postProduction.autoPublish.
+          render: getBool(args, "render"),
           timeoutSec: getNumber(args, "timeout"),
         },
         {
@@ -521,6 +535,86 @@ export const runCommand = async (
         );
       }
       return result;
+    }
+    case "pipeline": {
+      const p = await client.getPipelineStatus(await lesson());
+      return print(p, () => {
+        o.out(`${p.lessonPath}  ${p.lessonStatus}`);
+        o.out(
+          `  autoProcess ${p.autoProcess ? "on" : "off"}, autoPublish ${p.autoPublish ? "on" : "off"}`,
+        );
+        if (p.job) o.out(`  ${jobLine(p.job)}`);
+        o.out(
+          `  next: ${p.next ?? "nothing"}${p.next ? (p.nextIsAutomatic ? " (automatic)" : " (needs an action)") : ""}`,
+        );
+        o.out(`  ${p.message}`);
+      });
+    }
+    case "automation": {
+      const enable = getBool(args, "enable");
+      const disable = getBool(args, "disable");
+      const inbox = getString(args, "inbox");
+      const reset = getBool(args, "inbox-default") ?? false;
+      if (enable && disable) {
+        throw new UsageError("Pass --enable or --disable, not both");
+      }
+      const patch = {
+        ...(enable ? { enabled: true } : {}),
+        ...(disable ? { enabled: false } : {}),
+        ...(inbox !== undefined ? { inboxDir: inbox } : {}),
+        ...(reset ? { inboxDir: null } : {}),
+      };
+      const s =
+        Object.keys(patch).length > 0
+          ? await client.updateAutomationSettings(patch)
+          : await client.getAutomationSettings();
+      return print(s, () => {
+        o.out(
+          `Inbox ${s.enabled ? "ON" : "off"}: ${s.inboxDir} (${s.inboxDirSource})`,
+        );
+        o.out(
+          `  watcher ${s.watcher.watching ? "running" : "stopped"}; drop files at <inbox>/<Course>/<Module>/<Lesson>.mp4`,
+        );
+      });
+    }
+    case "inbox": {
+      const a = await client.getInboxActivity();
+      const limit = getNumber(args, "limit") ?? 20;
+      const events = a.events.slice(0, limit);
+      return print({ ...a, events }, () => {
+        o.out(
+          `Inbox ${a.settings.enabled ? "ON" : "off"}: ${a.settings.inboxDir} (watcher ${a.watcher.watching ? "running" : "stopped"})`,
+        );
+        a.watcher.pending.forEach((p) =>
+          o.out(
+            `  waiting ${p.file} (${p.sizeBytes} bytes, unchanged ${Math.round(p.stableForMs / 1000)} s)`,
+          ),
+        );
+        events.forEach((e) =>
+          o.out(
+            `${e.at}  ${e.level.padEnd(5)} ${e.type.padEnd(15)} ${e.message}`,
+          ),
+        );
+      });
+    }
+    case "process-pending": {
+      const lessonPaths = getList(args, "lesson-path");
+      const r = await client.processPending({
+        courseId: getString(args, "course"),
+        lessonPaths: lessonPaths.length > 0 ? lessonPaths : undefined,
+        dryRun: getBool(args, "dry-run") ?? false,
+      });
+      return print(r, () => {
+        const verb = r.dryRun ? "would queue" : "queued";
+        r.production.forEach((x) =>
+          o.out(`post-production ${verb}: ${x.lessonPath}`),
+        );
+        r.render.forEach((x) => o.out(`render ${verb}: ${x.lessonPath}`));
+        r.skipped.forEach((x) => o.out(`skipped ${x.lessonPath}: ${x.reason}`));
+        if (r.production.length + r.render.length === 0) {
+          o.out("Nothing to process");
+        }
+      });
     }
     default:
       throw new UsageError(

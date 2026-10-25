@@ -21,6 +21,12 @@ export const BOOLEAN_FLAGS = new Set([
   "outro",
   "raw",
   "whole-word",
+  "auto-process",
+  "auto-publish",
+  "dry-run",
+  "enable",
+  "disable",
+  "inbox-default",
 ]);
 
 const BOOL_LITERALS = new Set(["true", "false"]);

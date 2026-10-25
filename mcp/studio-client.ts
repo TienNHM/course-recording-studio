@@ -16,6 +16,9 @@ import {
 } from "../config/course";
 import { SERVER_PORT } from "../config/server";
 import {
+  AUTOMATION_INBOX,
+  AUTOMATION_PROCESS_PENDING,
+  AUTOMATION_SETTINGS,
   CAPTIONS_API,
   COURSES_API,
   EDIT_PLAN_API,
@@ -24,6 +27,7 @@ import {
   LESSON_API,
   PRODUCTION_CANCEL,
   PRODUCTION_START,
+  PIPELINE_STATUS,
   PRODUCTION_STATUS,
   PUBLISHED_FILES,
   RENDER_LESSON,
@@ -33,13 +37,22 @@ import type {
   CourseTree,
   LessonPatch,
 } from "../scripts/server/course-api";
-import { slugify } from "../scripts/server/course-slug";
+import { matchByTitle } from "../scripts/server/course-match";
 import type {
   ImportRecordingResponse,
   PublishedFile,
 } from "../scripts/server/import-recording";
+import type { ActivityEvent } from "../scripts/server/automation/activity-log";
+import type { PipelineStatus } from "../scripts/server/automation/decisions";
+import type { InboxStatus } from "../scripts/server/automation/inbox-watcher";
+import type {
+  AutomationSettings,
+  SettingsPatch,
+} from "../scripts/server/automation/settings";
 import { summarizeEditPlan, type EditPlanSummary } from "./edit-plan-tools";
 import { buildTranscript, type Transcript } from "./transcript";
+
+export { matchByTitle };
 
 export const DEFAULT_STUDIO_URL = `http://localhost:${SERVER_PORT}`;
 
@@ -89,6 +102,31 @@ export type ImportRecordingInput = {
   webcamPath?: string;
   markers?: Marker[];
   takeId?: string;
+  // Overrides the lesson's autoProcess for this import.
+  autoProcess?: boolean;
+};
+
+export type AutomationSettingsResponse = AutomationSettings & {
+  watcher: InboxStatus;
+};
+
+export type InboxActivity = {
+  settings: AutomationSettings;
+  watcher: InboxStatus;
+  events: ActivityEvent[];
+};
+
+export type ProcessPendingInput = {
+  courseId?: string;
+  lessonPaths?: string[];
+  dryRun?: boolean;
+};
+
+export type ProcessPendingResult = {
+  dryRun: boolean;
+  production: { lessonPath: string; jobId: string | null }[];
+  render: { lessonPath: string; jobId: string | null }[];
+  skipped: { lessonPath: string; reason: string }[];
 };
 
 export type EditPlanUpdate = {
@@ -137,23 +175,6 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 
 const withQuery = (route: string, lessonPath: string) =>
   `${route}?lessonPath=${encodeURIComponent(lessonPath)}`;
-
-// Finds an entry by id, exact title or slug of the title (so creating by
-// title is idempotent).
-export const matchByTitle = <T>(
-  items: T[],
-  wanted: string,
-  getId: (item: T) => string,
-  getTitle: (item: T) => string,
-): T | undefined => {
-  const trimmed = wanted.trim();
-  const wantedSlug = slugify(trimmed);
-  return (
-    items.find((i) => getId(i) === trimmed) ??
-    items.find((i) => getTitle(i).trim() === trimmed) ??
-    items.find((i) => wantedSlug !== "" && slugify(getTitle(i)) === wantedSlug)
-  );
-};
 
 // Turns the friendly edit-plan update into the server's index-based patch.
 export const toEditPlanPatch = (plan: EditPlan, update: EditPlanUpdate) => {
@@ -379,10 +400,17 @@ export class StudioClient {
 
   // ---- Jobs -------------------------------------------------------------------
 
-  startPostProduction(lessonPath: string, retranscribe = false) {
+  // autoPublish overrides the lesson setting for this job (render right
+  // after post-production or not); undefined = the lesson's setting.
+  startPostProduction(
+    lessonPath: string,
+    retranscribe = false,
+    autoPublish?: boolean,
+  ) {
     return this.request<JobState>(PRODUCTION_START, "POST", {
       lessonPath,
       retranscribe,
+      ...(autoPublish !== undefined ? { autoPublish } : {}),
     });
   }
 
@@ -443,6 +471,36 @@ export class StudioClient {
         options.signal,
       );
     }
+  }
+
+  // ---- Automation -------------------------------------------------------
+
+  getPipelineStatus(lessonPath: string) {
+    return this.request<PipelineStatus>(withQuery(PIPELINE_STATUS, lessonPath));
+  }
+
+  getAutomationSettings() {
+    return this.request<AutomationSettingsResponse>(AUTOMATION_SETTINGS);
+  }
+
+  updateAutomationSettings(patch: SettingsPatch) {
+    return this.request<AutomationSettingsResponse>(
+      AUTOMATION_SETTINGS,
+      "PUT",
+      patch,
+    );
+  }
+
+  getInboxActivity() {
+    return this.request<InboxActivity>(AUTOMATION_INBOX);
+  }
+
+  processPending(input: ProcessPendingInput = {}) {
+    return this.request<ProcessPendingResult>(
+      AUTOMATION_PROCESS_PENDING,
+      "POST",
+      input,
+    );
   }
 
   // ---- Edit plan ----------------------------------------------------------

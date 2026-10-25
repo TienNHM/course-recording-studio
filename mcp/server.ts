@@ -74,6 +74,12 @@ const postProductionPatch = z
     generateChapters: z.boolean(),
     intro: z.boolean(),
     outro: z.boolean(),
+    autoProcess: z
+      .boolean()
+      .describe("Start post-production as soon as a take is saved/imported"),
+    autoPublish: z
+      .boolean()
+      .describe("Render and publish right after post-production (no review)"),
   })
   .partial();
 
@@ -263,12 +269,52 @@ export const toolSchemas = {
       .boolean()
       .default(false)
       .describe("Accept all silence suggestions before rendering"),
-    render: z.boolean().default(true),
+    render: z
+      .boolean()
+      .optional()
+      .describe(
+        "Render and publish at the end (default: the lesson's postProduction.autoPublish)",
+      ),
     timeoutSec: z
       .number()
       .positive()
       .max(6 * 3600)
       .default(3600),
+  },
+  get_pipeline_status: { lessonPath: lessonPathArg },
+  get_automation_settings: {},
+  update_automation_settings: {
+    enabled: z
+      .boolean()
+      .optional()
+      .describe("Watch the inbox folder and import recordings dropped into it"),
+    inboxDir: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        "Absolute folder to watch (null = COURSE_STUDIO_INBOX or %USERPROFILE%/Videos/CourseStudioInbox)",
+      ),
+  },
+  get_inbox_status: {
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .max(50)
+      .default(20)
+      .describe("Number of recent events (newest first)"),
+  },
+  process_pending: {
+    courseId: z.string().optional().describe("Only lessons of this course"),
+    lessonPaths: z
+      .array(lessonPathArg)
+      .optional()
+      .describe("Only these lessons"),
+    dryRun: z
+      .boolean()
+      .default(false)
+      .describe("Only report what would be queued"),
   },
 } as const;
 
@@ -331,6 +377,8 @@ export const INSTRUCTIONS = `Course Recording Studio turns screen recordings int
 Hierarchy: course → module → lesson. A lesson is addressed by lessonPath "courses/<course>/<module>/<lesson>".
 Typical flow: create (or find) the lesson → import_recording (or record in the app UI) → start_post_production (transcribe, detect silence, build the edit plan) → review with get_edit_plan / get_transcript → update_edit_plan / update_transcript_text → render_lesson → get_published_files.
 process_lesson_end_to_end does all of it in one call.
+Automation: with a lesson's postProduction.autoProcess (default on) post-production starts by itself when a take is recorded or imported; with autoPublish (default off) the lesson is rendered and published right after post-production, without review. get_pipeline_status shows the current job and what runs next — do not start a job that is already running (409).
+Inbox folder ("drop to publish", update_automation_settings enabled=true): files dropped at <inbox>/<Course title>/<Module title>/<Lesson title>.mp4 (optional <Lesson title>.markers.json) are imported automatically; get_inbox_status shows recent activity. process_pending queues every RECORDED lesson (and REVIEW lessons with autoPublish).
 Lesson status: DRAFT → READY_TO_RECORD → RECORDED → PROCESSING → REVIEW → PUBLISHED.
 Edit plan: "accepted" cuts are removed from the video; non-accepted cuts are only suggestions. Chapter and cut times are on the ORIGINAL recording timeline.
 Recordings are never overwritten or deleted by these tools; source files are only read.`;
@@ -690,7 +738,8 @@ export const createStudioMcpServer = (
       title: "Produce lesson in one call (Sản xuất trọn gói)",
       description:
         "One-call automation: find or create course/module/lesson by title → optionally import a recording → post-production → " +
-        "optionally accept all silence suggestions → render → return published file paths. Reports progress.",
+        "optionally accept all silence suggestions → render (default: the lesson's autoPublish) → return published file paths. " +
+        "Waits for a job the app already started on its own instead of starting a second one. Reports progress.",
       inputSchema: toolSchemas.process_lesson_end_to_end,
       annotations: WRITE,
     },
@@ -734,6 +783,73 @@ export const createStudioMcpServer = (
         !result.ok && !result.timedOut,
       );
     }),
+  );
+
+  // ---- Automation ----
+
+  server.registerTool(
+    "get_pipeline_status",
+    {
+      title: "Pipeline status (Trạng thái tự động hóa)",
+      description:
+        "Current (or last) job of the lesson, its autoProcess/autoPublish flags and what happens next (record | production | review | render) and whether that starts automatically.",
+      inputSchema: toolSchemas.get_pipeline_status,
+      annotations: READ_ONLY,
+    },
+    safe(async ({ lessonPath }) =>
+      text(await client.getPipelineStatus(lessonPath)),
+    ),
+  );
+
+  server.registerTool(
+    "get_automation_settings",
+    {
+      title: "Automation settings (Cài đặt tự động)",
+      description:
+        "Inbox folder settings ({inboxDir, enabled, inboxDirSource, suggestedInboxDir}) and whether the watcher runs.",
+      inputSchema: toolSchemas.get_automation_settings,
+      annotations: READ_ONLY,
+    },
+    safe(async () => text(await client.getAutomationSettings())),
+  );
+
+  server.registerTool(
+    "update_automation_settings",
+    {
+      title: "Change automation settings (Sửa cài đặt tự động)",
+      description:
+        "Turns the inbox folder on/off and sets its path. When enabled, videos dropped at <inbox>/<Course>/<Module>/<Lesson>.mp4 are imported and processed automatically; sources move to <inbox>/_imported (or _failed with an .error.txt), never deleted.",
+      inputSchema: toolSchemas.update_automation_settings,
+      annotations: WRITE,
+    },
+    safe(async (patch) => text(await client.updateAutomationSettings(patch))),
+  );
+
+  server.registerTool(
+    "get_inbox_status",
+    {
+      title: "Inbox activity (Hoạt động thư mục nhận)",
+      description:
+        "Inbox watcher state, files waiting to finish writing and recent automation events (imports, failures, automatic jobs), newest first.",
+      inputSchema: toolSchemas.get_inbox_status,
+      annotations: READ_ONLY,
+    },
+    safe(async ({ limit }) => {
+      const inbox = await client.getInboxActivity();
+      return text({ ...inbox, events: inbox.events.slice(0, limit) });
+    }),
+  );
+
+  server.registerTool(
+    "process_pending",
+    {
+      title: "Process pending lessons (Xử lý bài đang chờ)",
+      description:
+        "Queues post-production for every RECORDED lesson and a render for every REVIEW lesson whose autoPublish is on (one job at a time). Use dryRun first to see what would run; filter with courseId or lessonPaths.",
+      inputSchema: toolSchemas.process_pending,
+      annotations: WRITE,
+    },
+    safe(async (args) => text(await client.processPending(args))),
   );
 
   // ---- Resources ----

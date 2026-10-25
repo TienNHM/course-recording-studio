@@ -1,7 +1,15 @@
 // The "one call" automation: (create lesson) → (import recording) →
 // post-production → (accept suggestions) → (render) → published files.
 // Shared by the MCP tool `process_lesson_end_to_end` and `studio process`.
+//
+// It drives the steps itself (import with autoProcess off, production with
+// autoPublish off) so suggestions are accepted before rendering, but it
+// respects the automation flags:
+// - a job the app already started on its own (autoProcess after a recording,
+//   the inbox folder, an autoPublish render) is waited for, not started twice;
+// - `render` defaults to the lesson's postProduction.autoPublish.
 import type { EditPlan, JobState, Marker } from "../config/course";
+import { TERMINAL_JOB_STATUSES } from "../config/course";
 import type { LessonPatch } from "../scripts/server/course-api";
 import type { ImportRecordingResponse } from "../scripts/server/import-recording";
 import type { EditPlanSummary } from "./edit-plan-tools";
@@ -24,6 +32,7 @@ export type ProcessLessonInput = {
   retranscribe?: boolean;
   // Cut suggestions of these reasons are accepted before rendering.
   acceptSuggestions?: CutReason[];
+  // Default: the lesson's postProduction.autoPublish.
   render?: boolean;
   timeoutSec?: number;
 };
@@ -106,8 +115,17 @@ export const processLesson = async (
     });
   }
 
+  const isRunning = (job: JobState | null): job is JobState =>
+    job !== null && !TERMINAL_JOB_STATUSES.includes(job.status);
+  const running = await client.getJobStatus(lessonPath);
+
   // 2. Import
   if (input.displayPath) {
+    if (isRunning(running)) {
+      throw new Error(
+        `Lesson ${lessonPath} has a ${running.kind} job ${running.status}; wait for it (get_job_status) or cancel it before importing`,
+      );
+    }
     result.stage = "import";
     await hooks.onStage?.("import", `Importing ${input.displayPath}`);
     const imported = await client.importRecording({
@@ -116,9 +134,11 @@ export const processLesson = async (
       webcamPath: input.webcamPath,
       markers: input.markers,
       takeId: input.takeId,
+      // This workflow starts post-production itself.
+      autoProcess: false,
     });
     result.imported = imported.take;
-  } else {
+  } else if (!isRunning(running)) {
     const { lesson } = await client.getLesson(lessonPath);
     if (!lesson.selectedTake) {
       throw new Error(
@@ -127,24 +147,84 @@ export const processLesson = async (
     }
   }
 
+  const { lesson } = await client.getLesson(lessonPath);
+  const renderWanted = input.render ?? lesson.postProduction.autoPublish;
+  const adopted = !input.displayPath && isRunning(running) ? running : null;
+
+  const waitRender = async (renderJob: JobState) => {
+    result.stage = "render";
+    await hooks.onStage?.(
+      "render",
+      renderJob.id === adopted?.id
+        ? "Waiting for the render the app already started"
+        : "Rendering",
+    );
+    const render = await client.waitForJob(lessonPath, renderJob.id, {
+      timeoutSec: remainingSec(),
+      signal: hooks.signal,
+      onProgress: (job) => hooks.onJob?.("render", job),
+    });
+    result.renderJob = render.job;
+    if (render.timedOut) {
+      result.timedOut = true;
+      return false;
+    }
+    if (render.job?.status !== "COMPLETED") {
+      result.error =
+        render.job?.error ?? `Render ended with ${render.job?.status}`;
+      return false;
+    }
+    result.published = await client.getPublishedFiles(lessonPath);
+    return true;
+  };
+
+  const finish = async () => {
+    result.stage = "done";
+    result.ok = true;
+    await hooks.onStage?.("done", "Done");
+    return result;
+  };
+
+  // A render the app started on its own (autoPublish): just wait for it.
+  if (adopted?.kind === "render") {
+    return (await waitRender(adopted)) ? finish() : result;
+  }
+
   // 3. Post-production
   result.stage = "production";
-  await hooks.onStage?.("production", "Starting post-production");
-  const started = await client.startPostProduction(
-    lessonPath,
-    input.retranscribe ?? false,
+  await hooks.onStage?.(
+    "production",
+    adopted
+      ? "Waiting for the post-production the app already started"
+      : "Starting post-production",
   );
+  const started =
+    adopted ??
+    (await client.startPostProduction(
+      lessonPath,
+      input.retranscribe ?? false,
+      // The render (if any) is started below, after accepting suggestions.
+      false,
+    ));
   const production = await client.waitForJob(lessonPath, started.id, {
     timeoutSec: remainingSec(),
     signal: hooks.signal,
     onProgress: (job) => hooks.onJob?.("production", job),
   });
-  result.productionJob = production.job;
   if (production.timedOut) {
+    result.productionJob = production.job;
     result.timedOut = true;
     return result;
   }
-  if (production.job?.status !== "COMPLETED") {
+  // An adopted production job with autoPublish chains a render right away.
+  const chainedRender =
+    production.job?.kind === "render" && production.job.id !== started.id
+      ? production.job
+      : null;
+  result.productionJob = chainedRender
+    ? { ...started, status: "COMPLETED", progress: 1, step: "Done" }
+    : production.job;
+  if (!chainedRender && production.job?.status !== "COMPLETED") {
     result.error =
       production.job?.error ??
       `Post-production ended with ${production.job?.status}`;
@@ -154,7 +234,11 @@ export const processLesson = async (
   // 4. Edit plan
   result.stage = "edit-plan";
   let plan = await client.getEditPlan(lessonPath);
-  if (input.acceptSuggestions && input.acceptSuggestions.length > 0) {
+  if (
+    !chainedRender &&
+    input.acceptSuggestions &&
+    input.acceptSuggestions.length > 0
+  ) {
     await hooks.onStage?.(
       "edit-plan",
       `Accepting ${input.acceptSuggestions.join(", ")} suggestions`,
@@ -166,30 +250,15 @@ export const processLesson = async (
   result.editPlan = summarizeEditPlan(plan);
 
   // 5. Render
-  if (input.render ?? true) {
-    result.stage = "render";
-    await hooks.onStage?.("render", "Rendering");
+  if (chainedRender) {
+    return (await waitRender(chainedRender)) ? finish() : result;
+  }
+  if (renderWanted) {
     const renderStarted = await client.startRender(lessonPath);
-    const render = await client.waitForJob(lessonPath, renderStarted.id, {
-      timeoutSec: remainingSec(),
-      signal: hooks.signal,
-      onProgress: (job) => hooks.onJob?.("render", job),
-    });
-    result.renderJob = render.job;
-    if (render.timedOut) {
-      result.timedOut = true;
+    if (!(await waitRender(renderStarted))) {
       return result;
     }
-    if (render.job?.status !== "COMPLETED") {
-      result.error =
-        render.job?.error ?? `Render ended with ${render.job?.status}`;
-      return result;
-    }
-    result.published = await client.getPublishedFiles(lessonPath);
   }
 
-  result.stage = "done";
-  result.ok = true;
-  await hooks.onStage?.("done", "Done");
-  return result;
+  return finish();
 };
