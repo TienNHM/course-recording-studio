@@ -4,10 +4,14 @@ import { GoToRecorder } from "./GoToRecorder";
 import { Main } from "./Main";
 import { calcMetadata } from "./calculate-metadata/calc-metadata";
 import { LessonMain } from "./lesson/LessonMain";
+import type { LessonProps } from "./lesson/calc-lesson-metadata";
 import {
   calcLessonMetadata,
+  calcLessonStylePreviewMetadata,
   defaultLessonProps,
+  defaultLessonStylePreviewProps,
   lessonCompositionSchema,
+  lessonStylePreviewSchema,
 } from "./lesson/calc-lesson-metadata";
 
 export const RemotionRoot = () => {
@@ -95,6 +99,22 @@ export const RemotionRoot = () => {
         schema={lessonCompositionSchema}
         defaultProps={defaultLessonProps}
         calculateMetadata={calcLessonMetadata}
+      />
+      {/* Preview every course.videoStyle option without editing course.json:
+          edit lessonPath / language / style in the props panel. */}
+      <Composition
+        component={
+          LessonMain as React.FC<
+            LessonProps & typeof defaultLessonStylePreviewProps
+          >
+        }
+        id="lesson-style-preview"
+        schema={lessonStylePreviewSchema}
+        defaultProps={{
+          ...defaultLessonProps,
+          ...defaultLessonStylePreviewProps,
+        }}
+        calculateMetadata={calcLessonStylePreviewMetadata}
       />
       <Composition
         component={GoToRecorder}

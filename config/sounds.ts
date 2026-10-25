@@ -29,3 +29,13 @@ export const getAudioSource = (track: Music) => {
 
   throw new Error(`No sound track for ${track}`);
 };
+
+// --- "lesson" composition (course.videoStyle) ---
+// Background music under the intro and outro cards only (never under speech).
+export const LESSON_MUSIC_TRACK = `${SOUNDS_FOLDER}/utope-rhythmic-reverie.mp3`;
+export const LESSON_MUSIC_VOLUME = 0.32;
+// Fade in/out of the music, in seconds.
+export const LESSON_MUSIC_FADE_SECONDS = 0.6;
+// Subtle whoosh at intro → lesson → outro transitions.
+export const LESSON_WHOOSH_SFX = `${SOUNDS_FOLDER}/whip.wav`;
+export const LESSON_WHOOSH_VOLUME = 0.14;

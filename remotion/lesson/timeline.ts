@@ -338,3 +338,142 @@ export const getSegmentRangeIfFirstPiece = (
     fps,
   );
 };
+
+// --- Intro → lesson → outro layout (course.videoStyle.transition) ---
+
+export type LessonTransitionKind = "none" | "fade" | "slide" | "light-leak";
+
+export type LessonTimeline = {
+  introDurationInFrames: number;
+  bodyDurationInFrames: number;
+  outroDurationInFrames: number;
+  // Overlap of intro/body and body/outro (fade / slide transitions only)
+  introOverlapInFrames: number;
+  outroOverlapInFrames: number;
+  // First frame of the lesson content (the take) on the output timeline
+  bodyStartFrame: number;
+  // First frame of the outro on the output timeline (null without outro)
+  outroStartFrame: number | null;
+  totalDurationInFrames: number;
+  // Output frames where one part ends and the next starts (for light-leak
+  // overlays and whoosh sounds): the middle of an overlapping transition or
+  // the hard cut point.
+  cutFrames: number[];
+};
+
+// Transitions overlap adjacent parts (TransitionSeries semantics): the body
+// starts `overlap` frames before the intro ends, which shortens the video.
+// The overlap is capped so that a transition never takes more than half of a
+// part. Light-leak overlays and "none" don't change the timing.
+export const computeLessonTimeline = ({
+  introDurationInFrames,
+  bodyDurationInFrames,
+  outroDurationInFrames,
+  // eslint-disable-next-line @remotion/non-pure-animation -- not a CSS transition
+  transition,
+  transitionDurationInFrames,
+}: {
+  introDurationInFrames: number;
+  bodyDurationInFrames: number;
+  outroDurationInFrames: number;
+  transition: LessonTransitionKind;
+  transitionDurationInFrames: number;
+}): LessonTimeline => {
+  const overlaps = transition === "fade" || transition === "slide";
+  const overlapBetween = (a: number, b: number) =>
+    overlaps && a > 0 && b > 0
+      ? Math.max(
+          0,
+          Math.min(
+            Math.round(transitionDurationInFrames),
+            Math.floor(a / 2),
+            Math.floor(b / 2),
+          ),
+        )
+      : 0;
+
+  const introOverlapInFrames = overlapBetween(
+    introDurationInFrames,
+    bodyDurationInFrames,
+  );
+  const outroOverlapInFrames = overlapBetween(
+    bodyDurationInFrames,
+    outroDurationInFrames,
+  );
+
+  const bodyStartFrame = Math.max(
+    0,
+    introDurationInFrames - introOverlapInFrames,
+  );
+  const bodyEndFrame = bodyStartFrame + bodyDurationInFrames;
+  const outroStartFrame =
+    outroDurationInFrames > 0 ? bodyEndFrame - outroOverlapInFrames : null;
+  const totalDurationInFrames =
+    outroStartFrame === null
+      ? bodyEndFrame
+      : outroStartFrame + outroDurationInFrames;
+
+  const cutFrames: number[] = [];
+  if (introDurationInFrames > 0) {
+    cutFrames.push(bodyStartFrame + Math.floor(introOverlapInFrames / 2));
+  }
+  if (outroStartFrame !== null) {
+    cutFrames.push(outroStartFrame + Math.floor(outroOverlapInFrames / 2));
+  }
+
+  return {
+    introDurationInFrames,
+    bodyDurationInFrames,
+    outroDurationInFrames,
+    introOverlapInFrames,
+    outroOverlapInFrames,
+    bodyStartFrame,
+    outroStartFrame,
+    totalDurationInFrames,
+    cutFrames,
+  };
+};
+
+export type BodyChapter = {
+  // Start relative to the lesson body (frames)
+  fromFrame: number;
+  // Until the next chapter / end of the body
+  durationInFrames: number;
+  // 0-based
+  index: number;
+  total: number;
+  title: string;
+};
+
+// Chapters of the frame pieces, relative to the start of the lesson body.
+export const getBodyChapters = (pieces: FramePiece[]): BodyChapter[] => {
+  const starts = pieces.filter((p) => p.chapter !== null);
+  const last = pieces[pieces.length - 1];
+  const bodyEnd = last ? last.from + last.durationInFrames : 0;
+  return starts.map((piece, index) => {
+    const next = starts[index + 1];
+    const end = next ? next.from : bodyEnd;
+    return {
+      fromFrame: piece.from,
+      durationInFrames: end - piece.from,
+      index,
+      total: starts.length,
+      title: piece.chapter as string,
+    };
+  });
+};
+
+// Chapters on the final output timeline (what chapters.json contains).
+export const getOutputChapters = ({
+  bodyChapters,
+  bodyStartFrame,
+  fps,
+}: {
+  bodyChapters: BodyChapter[];
+  bodyStartFrame: number;
+  fps: number;
+}): TimelineChapter[] =>
+  bodyChapters.map((c) => ({
+    timeMs: Math.round(((bodyStartFrame + c.fromFrame) / fps) * 1000),
+    title: c.title,
+  }));

@@ -1,7 +1,12 @@
 import type { CalculateMetadataFunction } from "remotion";
 import { z } from "zod";
-import type { EditPlan } from "../../config/course";
-import { OUTPUT_PROFILES } from "../../config/course";
+import type { CourseLanguage, EditPlan, VideoStyle } from "../../config/course";
+import {
+  DEFAULT_VIDEO_STYLE,
+  OUTPUT_PROFILES,
+  courseLanguage,
+  videoStyle as videoStyleSchema,
+} from "../../config/course";
 import type {
   Cameras,
   SceneAndMetadata,
@@ -12,16 +17,34 @@ import type {
 } from "../../config/scenes";
 import type { Theme } from "../../config/themes";
 import { LESSON_THEME } from "../../config/themes";
-import { addChaptersToScenesAndMetadata } from "../calculate-metadata/add-chapters-to-scenes";
+import {
+  LESSON_INTRO_SECONDS,
+  LESSON_OUTRO_SECONDS,
+  LESSON_TRANSITION_SECONDS,
+} from "../../config/transitions";
 import { addDurationsToScenes } from "../calculate-metadata/add-durations-to-scenes";
 import { calculateSrt } from "../captions/srt/helpers/calculate-srt";
-import { makeChapters } from "../chapters/make-chapters";
 import { getVideoMetadata } from "../helpers/get-video-metadata";
 import { getDimensionsForLayout } from "../layout/dimensions";
 import { getVideoSceneLayout } from "../layout/get-layout";
-import { loadLesson } from "./load-lesson";
-import type { FramePiece, TimelineChapter, TimelineSegment } from "./timeline";
+import type { LessonLanguage } from "./i18n";
 import {
+  DEFAULT_LESSON_LANGUAGE,
+  chapterTitleOrFallback,
+  parseLessonTitle,
+} from "./i18n";
+import { loadLesson } from "./load-lesson";
+import type {
+  BodyChapter,
+  FramePiece,
+  LessonTimeline,
+  TimelineChapter,
+  TimelineSegment,
+} from "./timeline";
+import {
+  computeLessonTimeline,
+  getBodyChapters,
+  getOutputChapters,
   getSegmentRangeIfFirstPiece,
   normalizeSegments,
   remapCaptions,
@@ -29,14 +52,32 @@ import {
 } from "./timeline";
 
 export const DEFAULT_LESSON_FPS = 30;
-const INTRO_DURATION_IN_SECONDS = 3;
-const OUTRO_DURATION_IN_SECONDS = 4;
 const PLACEHOLDER_DURATION_IN_FRAMES = 90;
+
+// Optional overrides of course.json, used by the Studio style preview.
+export type LessonStyleOverride = Partial<VideoStyle>;
 
 export const lessonCompositionSchema = z.object({
   // Path of the lesson folder relative to public/, e.g. "courses/c/m/l"
   lessonPath: z.string(),
 });
+
+// "lesson-style-preview" composition: every videoStyle field is editable in
+// the Studio props panel without touching course.json.
+export const lessonStylePreviewSchema = z.object({
+  lessonPath: z.string(),
+  language: courseLanguage,
+  style: z.object({
+    palette: videoStyleSchema.shape.palette.unwrap(),
+    intro: videoStyleSchema.shape.intro.unwrap(),
+    // eslint-disable-next-line @remotion/non-pure-animation -- not a CSS transition
+    transition: videoStyleSchema.shape.transition.unwrap(),
+    chapterCards: z.boolean(),
+    lowerThird: z.boolean(),
+    backgroundMusic: z.boolean(),
+  }),
+});
+export type LessonStylePreviewProps = z.infer<typeof lessonStylePreviewSchema>;
 
 export type LessonLayout = EditPlan["layout"];
 
@@ -49,49 +90,106 @@ export type LessonRenderInfo = {
   lessonTitle: string;
   moduleTitle: string;
   courseName: string;
+  language: LessonLanguage;
+  videoStyle: VideoStyle;
   fps: number;
   durationInFrames: number;
   layout: LessonLayout;
   hasEditPlan: boolean;
   hasCaptions: boolean;
-  // Length of the intro, i.e. offset of the take content in the output
+  // Offset of the take content (its first kept frame) in the output.
+  // With a fade/slide transition this is shorter than the intro card.
   introDurationInMs: number;
+  // Length of the intro / outro cards themselves
+  introCardDurationInMs: number;
   outroDurationInMs: number;
+};
+
+export type LessonIntroData = {
+  // "Bài 1" parsed from the title, or null
+  label: string | null;
+  // Title without the label
+  title: string;
+  // Intro title as written in the edit plan
+  fullTitle: string;
+  // course → module (the intro subtitle "a · b" split up)
+  breadcrumb: string[];
+  subtitle: string | null;
+};
+
+export type LessonOutroData = {
+  courseName: string;
+  lessonTitle: string;
 };
 
 export type LessonProps = {
   lessonPath: string;
+  styleOverride?: LessonStyleOverride | null;
+  languageOverride?: CourseLanguage | null;
   // --- Calculated in calculateMetadata() ---
   theme: Theme;
+  language: LessonLanguage;
+  videoStyle: VideoStyle;
+  // Video scenes of the lesson body; `from` is relative to the body start
   scenesAndMetadata: SceneAndMetadata[];
   // Chapters on the output timeline (same content as the chapters.json artifact)
   chapters: TimelineChapter[];
+  // Chapters relative to the body start (chapter cards, progress bar ticks)
+  bodyChapters: BodyChapter[];
+  timeline: LessonTimeline | null;
+  transitionDurationInFrames: number;
+  intro: LessonIntroData | null;
+  outro: LessonOutroData | null;
   info: LessonRenderInfo | null;
 };
 
 export const defaultLessonProps: LessonProps = {
   lessonPath: "",
   theme: LESSON_THEME,
+  language: DEFAULT_LESSON_LANGUAGE,
+  videoStyle: DEFAULT_VIDEO_STYLE,
   scenesAndMetadata: [],
   chapters: [],
+  bodyChapters: [],
+  timeline: null,
+  transitionDurationInFrames: 0,
+  intro: null,
+  outro: null,
   info: null,
+};
+
+export const DEFAULT_PREVIEW_LESSON_PATH =
+  "courses/net-backend-zero-senior/module-0-khai-giang/bai-1-gioi-thieu-khoa-hoc";
+
+export const defaultLessonStylePreviewProps: LessonStylePreviewProps = {
+  lessonPath: DEFAULT_PREVIEW_LESSON_PATH,
+  language: "vi",
+  style: DEFAULT_VIDEO_STYLE,
 };
 
 const framesToMs = (frames: number, fps: number) =>
   Math.round((frames / fps) * 1000);
 
-const makeVideoScene = (chapter: string | null): SelectableVideoScene => ({
+const makeVideoScene = (): SelectableVideoScene => ({
   type: "videoscene",
   webcamPosition: "bottom-right",
   startOffset: 0,
   endOffset: 0,
   // Hard cuts between segments
   transitionToNextScene: false,
-  newChapter: chapter ?? undefined,
+  // Chapters are drawn by the lesson's own chapter cards, not by the legacy
+  // chapter list of the recorder template (which is driven by `newChapter`).
+  newChapter: undefined,
   stopChapteringAfterThis: false,
   music: "none",
   bRolls: [],
 });
+
+const splitBreadcrumb = (subtitle: string | null) =>
+  (subtitle ?? "")
+    .split(/\s+[·•|›»]\s+/u)
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
 
 export const calcLessonMetadata: CalculateMetadataFunction<
   LessonProps
@@ -104,12 +202,23 @@ export const calcLessonMetadata: CalculateMetadataFunction<
       fps: DEFAULT_LESSON_FPS,
       width,
       height,
-      props: { ...defaultLessonProps, lessonPath: props.lessonPath },
+      props: {
+        ...defaultLessonProps,
+        lessonPath: props.lessonPath,
+        language: props.languageOverride ?? DEFAULT_LESSON_LANGUAGE,
+      },
     };
   }
 
   const loaded = await loadLesson(props.lessonPath);
   const { lesson, course, module, editPlan, media, captions, takeId } = loaded;
+
+  const language: LessonLanguage =
+    props.languageOverride ?? course?.language ?? DEFAULT_LESSON_LANGUAGE;
+  const videoStyle: VideoStyle = videoStyleSchema.parse({
+    ...(course?.videoStyle ?? DEFAULT_VIDEO_STYLE),
+    ...(props.styleOverride ?? {}),
+  });
 
   const fps = course
     ? OUTPUT_PROFILES[course.outputProfile].fps
@@ -210,46 +319,49 @@ export const calcLessonMetadata: CalculateMetadataFunction<
     throw new Error("The edit plan does not keep any part of the take.");
   }
 
+  const planChapters = [...(editPlan ? editPlan.chapters : [])]
+    .sort((a, b) => a.timeMs - b.timeMs)
+    .map((c, i) => ({
+      timeMs: c.timeMs,
+      title: chapterTitleOrFallback(c.title, i, language),
+    }));
+
   const pieces = segmentsToFramePieces({
     segments,
-    chapters: editPlan ? editPlan.chapters : [],
+    chapters: planChapters,
     fps,
   });
 
   const courseName = course?.name ?? lesson.courseId;
   const moduleTitle = module?.title ?? lesson.moduleId;
 
-  // --- Scenes ---
-  const intro = editPlan
+  // --- Intro / outro ---
+  const introPlan = editPlan
     ? editPlan.intro
-    : { title: lesson.title, subtitle: `${moduleTitle} · ${courseName}` };
+    : { title: lesson.title, subtitle: `${courseName} · ${moduleTitle}` };
   const hasOutro = editPlan ? editPlan.outro : true;
 
+  const intro: LessonIntroData | null = introPlan
+    ? {
+        ...parseLessonTitle(introPlan.title),
+        fullTitle: introPlan.title,
+        breadcrumb: splitBreadcrumb(introPlan.subtitle),
+        subtitle: introPlan.subtitle,
+      }
+    : null;
+  const outro: LessonOutroData | null = hasOutro
+    ? { courseName, lessonTitle: lesson.title }
+    : null;
+
   const introDurationInFrames = intro
-    ? Math.round(INTRO_DURATION_IN_SECONDS * fps)
+    ? Math.round(LESSON_INTRO_SECONDS * fps)
     : 0;
-  const outroDurationInFrames = hasOutro
-    ? Math.round(OUTRO_DURATION_IN_SECONDS * fps)
+  const outroDurationInFrames = outro
+    ? Math.round(LESSON_OUTRO_SECONDS * fps)
     : 0;
 
+  // --- Body scenes (`from` relative to the body start) ---
   const scenes: SceneAndMetadata[] = [];
-
-  if (intro) {
-    scenes.push({
-      type: "other-scene",
-      scene: {
-        type: "title",
-        title: intro.title,
-        subtitle: intro.subtitle,
-        durationInFrames: introDurationInFrames,
-        music: "none",
-        transitionToNextScene: false,
-      },
-      durationInFrames: introDurationInFrames,
-      from: 0,
-    });
-  }
-
   for (let i = 0; i < pieces.length; i++) {
     const piece = pieces[i] as FramePiece;
     // Captions are attached to the first piece of each segment so that
@@ -266,7 +378,7 @@ export const calcLessonMetadata: CalculateMetadataFunction<
 
     scenes.push({
       type: "video-scene",
-      scene: makeVideoScene(piece.chapter),
+      scene: makeVideoScene(),
       videos,
       layout: sceneLayout,
       cameras,
@@ -282,32 +394,32 @@ export const calcLessonMetadata: CalculateMetadataFunction<
     });
   }
 
-  if (hasOutro) {
-    scenes.push({
-      type: "other-scene",
-      scene: {
-        type: "lessonoutro",
-        title: courseName,
-        subtitle: "Thanks for watching",
-        durationInFrames: outroDurationInFrames,
-        music: "none",
-        transitionToNextScene: false,
-      },
-      durationInFrames: outroDurationInFrames,
-      from: 0,
-    });
-  }
-
-  // No scene transitions in lessons, so this only assigns `from` values.
-  const { totalDurationInFrames, scenesAndMetadataWithDuration } =
-    addDurationsToScenes(scenes, "landscape");
-  const withChapters = addChaptersToScenesAndMetadata(
+  // No scene transitions inside the body (hard cuts, they are edits), so
+  // this only assigns `from` values.
+  const {
+    totalDurationInFrames: bodyDurationInFrames,
     scenesAndMetadataWithDuration,
-  );
+  } = addDurationsToScenes(scenes, "landscape");
 
-  const chapters: TimelineChapter[] = makeChapters({
-    scenes: withChapters,
-  }).map((c) => ({ timeMs: framesToMs(c.start, fps), title: c.title }));
+  const bodyChapters = getBodyChapters(pieces);
+
+  const transitionDurationInFrames = Math.round(
+    LESSON_TRANSITION_SECONDS * fps,
+  );
+  const timeline = computeLessonTimeline({
+    introDurationInFrames,
+    bodyDurationInFrames,
+    outroDurationInFrames,
+    // eslint-disable-next-line @remotion/non-pure-animation -- not a CSS transition
+    transition: videoStyle.transition,
+    transitionDurationInFrames,
+  });
+
+  const chapters: TimelineChapter[] = getOutputChapters({
+    bodyChapters,
+    bodyStartFrame: timeline.bodyStartFrame,
+    fps,
+  });
 
   const info: LessonRenderInfo = {
     courseId: lesson.courseId,
@@ -317,26 +429,63 @@ export const calcLessonMetadata: CalculateMetadataFunction<
     lessonTitle: lesson.title,
     moduleTitle,
     courseName,
+    language,
+    videoStyle,
     fps,
-    durationInFrames: totalDurationInFrames,
+    durationInFrames: timeline.totalDurationInFrames,
     layout,
     hasEditPlan: editPlan !== null,
     hasCaptions: captions !== null,
-    introDurationInMs: framesToMs(introDurationInFrames, fps),
+    introDurationInMs: framesToMs(timeline.bodyStartFrame, fps),
+    introCardDurationInMs: framesToMs(introDurationInFrames, fps),
     outroDurationInMs: framesToMs(outroDurationInFrames, fps),
   };
 
   return {
-    durationInFrames: totalDurationInFrames,
+    durationInFrames: timeline.totalDurationInFrames,
     fps,
     width,
     height,
     props: {
       lessonPath: props.lessonPath,
+      styleOverride: props.styleOverride ?? null,
+      languageOverride: props.languageOverride ?? null,
       theme: LESSON_THEME,
-      scenesAndMetadata: withChapters,
+      language,
+      videoStyle,
+      scenesAndMetadata: scenesAndMetadataWithDuration,
       chapters,
+      bodyChapters,
+      timeline,
+      transitionDurationInFrames,
+      intro,
+      outro,
       info,
+    },
+  };
+};
+
+// Studio style preview: maps the flat, editable style props to overrides.
+export const calcLessonStylePreviewMetadata: CalculateMetadataFunction<
+  LessonProps & LessonStylePreviewProps
+> = async (options) => {
+  const p = options.props;
+  const result = await calcLessonMetadata({
+    ...options,
+    props: {
+      ...defaultLessonProps,
+      lessonPath: p.lessonPath,
+      languageOverride: p.language,
+      styleOverride: p.style,
+    },
+  });
+  return {
+    ...result,
+    // Keep the flat style props so that the Studio panel stays editable.
+    props: {
+      ...(result.props as LessonProps),
+      lessonPath: p.lessonPath,
+      style: p.style,
     },
   };
 };

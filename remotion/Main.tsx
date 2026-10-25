@@ -18,6 +18,8 @@ export type MainProps = {
   scenesAndMetadata: SceneAndMetadata[];
   theme: Theme;
   platform: Platform;
+  // The "lesson" composition emits its own (offset) captions.srt.
+  emitSrt?: boolean;
 };
 
 export const Main: React.FC<MainProps> = ({
@@ -26,6 +28,7 @@ export const Main: React.FC<MainProps> = ({
   theme,
   platform,
   scenes,
+  emitSrt = true,
 }) => {
   const chapters = useMemo(() => {
     return makeChapters({ scenes: scenesAndMetadata });
@@ -87,7 +90,7 @@ export const Main: React.FC<MainProps> = ({
         scenesAndMetadata={scenesAndMetadata}
         canvasLayout={canvasLayout}
       />
-      {canvasLayout === "landscape" ? (
+      {canvasLayout === "landscape" && emitSrt ? (
         <EmitSrtFile scenesAndMetadata={scenesAndMetadata} />
       ) : null}
       <div ref={captionEditorPortal} />
