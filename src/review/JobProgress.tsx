@@ -1,71 +1,119 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import type { JobState } from "../../config/course";
+import { Alert } from "../components/ui/alert";
+import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { Progress } from "../components/ui/progress";
+import { useFormat, useT } from "../i18n";
+import { estimateRemainingMs } from "./review-helpers";
 import { isJobActive } from "./use-job";
 
-const KIND_LABEL: Record<JobState["kind"], string> = {
-  production: "Post-production",
-  render: "Export",
+const useNow = (active: boolean) => {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) {
+      return;
+    }
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
 };
 
-// Progress of the lesson's current (or last failed) job.
+/**
+ * Progress of the lesson's current (or last failed / cancelled) job, with an
+ * ETA and a cancel button. Used by the Review page and the Library.
+ */
 export const JobProgress: React.FC<{
   readonly job: JobState | null;
   readonly onCancel: () => void;
   readonly busy?: boolean;
-}> = ({ job, onCancel, busy }) => {
+  /** Shown on a failed job (e.g. "Export again"). */
+  readonly onRetry?: () => void;
+}> = ({ job, onCancel, busy, onRetry }) => {
+  const t = useT("review");
+  const f = useFormat();
+  const active = isJobActive(job);
+  const now = useNow(active);
+
   if (!job) {
     return null;
   }
 
-  if (isJobActive(job)) {
-    const percent = Math.round(job.progress * 100);
+  const render = job.kind === "render";
+
+  if (active) {
+    const queued = job.status === "QUEUED";
+    const cancelling = job.step === "Cancelling";
+    const eta = queued ? null : estimateRemainingMs(job, now);
     return (
       <div
-        className="grid gap-2 rounded-md border p-3"
+        className="grid gap-2 rounded-lg border bg-card p-3"
         data-testid="job-progress"
+        title={job.step}
       >
-        <div className="flex items-center gap-2 text-sm">
-          <span className="font-medium">{KIND_LABEL[job.kind]}</span>
-          <span className="text-xs text-muted-foreground">{job.status}</span>
-          <span className="flex-1 truncate text-muted-foreground">
-            {job.step}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-label">
+            {queued
+              ? t("export.queued")
+              : render
+                ? t("export.rendering")
+                : t("export.production")}
           </span>
-          <span className="tabular-nums">{percent}%</span>
+          <Badge tone="info" size="sm" pulse>
+            {t(`jobStatus.${job.status}`)}
+          </Badge>
+          <span className="flex-1" />
+          {eta !== null ? (
+            <span className="text-caption text-muted-foreground">
+              {t("export.eta", { time: f.formatDuration(eta) })}
+            </span>
+          ) : null}
+          <span className="timecode text-label">
+            {f.formatPercent(job.progress)}
+          </span>
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            className="h-7"
-            disabled={busy || job.step === "Cancelling"}
+            size="xs"
+            disabled={busy || cancelling}
             onClick={onCancel}
           >
-            Cancel
+            {cancelling ? t("export.cancelling") : t("export.cancel")}
           </Button>
         </div>
-        <div className="h-1.5 overflow-hidden rounded bg-secondary">
-          <div
-            className="h-full bg-sky-500 transition-[width] duration-500"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
+        <Progress
+          value={queued ? null : job.progress}
+          tone="primary"
+          label={render ? t("export.rendering") : t("export.production")}
+        />
       </div>
     );
   }
 
   if (job.status === "FAILED") {
     return (
-      <div className="rounded-md border border-red-900 bg-red-950/40 p-3 text-sm text-red-300">
-        {KIND_LABEL[job.kind]} failed: {job.error ?? "Unknown error"}
-      </div>
+      <Alert
+        tone="destructive"
+        title={render ? t("export.failed") : t("export.productionFailed")}
+        action={
+          onRetry ? (
+            <Button type="button" size="xs" variant="outline" onClick={onRetry}>
+              {t("export.retry")}
+            </Button>
+          ) : undefined
+        }
+      >
+        {job.error ?? job.step}
+      </Alert>
     );
   }
 
   if (job.status === "CANCELLED") {
     return (
-      <div className="text-sm text-muted-foreground">
-        {KIND_LABEL[job.kind]} was cancelled.
-      </div>
+      <p className="text-caption text-muted-foreground">
+        {render ? t("export.cancelled") : t("export.productionCancelled")}
+      </p>
     );
   }
 
