@@ -1,10 +1,8 @@
 import { ArrowLeft } from "lucide-react";
 import React, { useState } from "react";
-import { BlinkingCircle } from "./BlinkingCircle";
 import { Logo } from "./Logo";
 import type { RecordingStatus } from "./RecordButton";
 import { RecordButton } from "./RecordButton";
-import { Timer } from "./Timer";
 import { ProcessStatus, ProcessingStatus } from "./components/ProcessingStatus";
 import { UseThisTake } from "./components/UseThisTake";
 import { Button } from "./components/ui/button";
@@ -53,15 +51,9 @@ export const TopBar: React.FC<{
           showAllViews={showAllViews}
           lessonPath={lessonPath}
         />
-        {recordingStatus.type === "recording" ? (
-          <>
-            <BlinkingCircle />
-            <Timer startDate={recordingStatus.ongoing.startDate} />
-          </>
-        ) : null}
         {recordingStatus.type === "recording-finished" ? (
           <UseThisTake
-            selectedFolder={lessonPath}
+            lessonPath={lessonPath}
             recordingStatus={recordingStatus}
             setRecordingStatus={setRecordingStatus}
             setStatus={setProcessingStatus}
@@ -77,7 +69,7 @@ export const TopBar: React.FC<{
         {location ? (
           <>
             <span className="text-muted-foreground">
-              {location.course.name} › {location.module.title} ›{" "}
+              {location.course.name} â€º {location.module.title} â€º{" "}
             </span>
             <span className="font-medium">{location.lesson.title}</span>
           </>
