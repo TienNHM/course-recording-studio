@@ -3,6 +3,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { Course, CourseModule, Lesson } from "../../config/course";
@@ -56,7 +57,13 @@ export const findLesson = (
 
 type CurrentLessonContextType = {
   tree: CourseTree | null;
+  // Raw (English) error message of the last load, for logs; UIs should show
+  // a localized message based on `serverOffline` / `error !== null`.
   error: string | null;
+  // The local server is not running (static build / preview).
+  serverOffline: boolean;
+  // True until the first load finished (successfully or not).
+  loading: boolean;
   lesson: Lesson | null;
   location: LessonLocation | null;
   lessonPath: string | null;
@@ -72,19 +79,33 @@ export const CurrentLessonProvider: React.FC<{
 }> = ({ children }) => {
   const [tree, setTree] = useState<CourseTree | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [serverOffline, setServerOffline] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const lastTreeJson = useRef<string | null>(null);
   const [lessonPath, setLessonPath] = useState<string | null>(loadLessonPath);
 
   const refresh = useCallback(async () => {
     if (!window.remotionServerEnabled) {
       setError("The local server is not running.");
+      setServerOffline(true);
+      setLoading(false);
       return;
     }
 
     try {
-      setTree(await fetchCourseTree());
+      const next = await fetchCourseTree();
+      // Keep the same object when nothing changed (the library polls), so
+      // consumers do not re-render for nothing.
+      const json = JSON.stringify(next);
+      if (json !== lastTreeJson.current) {
+        lastTreeJson.current = json;
+        setTree(next);
+      }
       setError(null);
     } catch (e) {
       setError((e as Error).message);
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -102,13 +123,15 @@ export const CurrentLessonProvider: React.FC<{
     return {
       tree,
       error,
+      serverOffline,
+      loading,
       location,
       lesson: location?.lesson ?? null,
       lessonPath: location ? lessonPath : null,
       setCurrentLesson,
       refresh,
     };
-  }, [error, lessonPath, refresh, setCurrentLesson, tree]);
+  }, [error, lessonPath, loading, refresh, serverOffline, setCurrentLesson, tree]);
 
   return (
     <CurrentLessonContext.Provider value={value}>

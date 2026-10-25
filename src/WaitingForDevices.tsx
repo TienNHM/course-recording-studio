@@ -6,7 +6,11 @@ import {
   useMemo,
   useState,
 } from "react";
+import { Loader2, TriangleAlert } from "lucide-react";
+import { Button } from "./components/ui/button";
 import { getDevices } from "./helpers/get-devices";
+import { useT } from "./i18n";
+import { CenteredMessage, RecorderShell } from "./recording/RecorderShell";
 
 export type DevicesContext = {
   devices: MediaDeviceInfo[] | null;
@@ -21,14 +25,17 @@ export const WaitingForDevices: React.FC<{
 }> = ({ children }) => {
   const [devices, setDevices] = useState<MediaDeviceInfo[] | null>(null);
   const [isRescanning, setIsRescanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const t = useT("recording");
 
   const checkDeviceLabels = useCallback(async () => {
     try {
       const fetchedDevices = await getDevices();
       setDevices(fetchedDevices);
+      setError(null);
     } catch (err) {
-      alert((err as Error).message);
       console.log(err);
+      setError((err as Error).message);
     }
   }, []);
 
@@ -59,9 +66,27 @@ export const WaitingForDevices: React.FC<{
 
   if (devices === null) {
     return (
-      <div className="absolute inset-0 flex justify-center items-center text-sm text-muted-foreground">
-        Finding devices...
-      </div>
+      <RecorderShell>
+        {error ? (
+          <CenteredMessage
+            tone="destructive"
+            icon={<TriangleAlert className="h-6 w-6" aria-hidden />}
+            title={t("devices.failedTitle")}
+            action={
+              <Button variant="outline" onClick={checkDeviceLabels}>
+                {t("sources.rescan")}
+              </Button>
+            }
+          >
+            {t("errors.devices", { message: error })}
+          </CenteredMessage>
+        ) : (
+          <CenteredMessage
+            icon={<Loader2 className="h-6 w-6 animate-spin" aria-hidden />}
+            title={t("devices.loading")}
+          />
+        )}
+      </RecorderShell>
     );
   }
 

@@ -1,15 +1,23 @@
 import type { Marker, MarkerType } from "../../config/course";
 import { elapsedMediaMs, PauseClock } from "./pause-clock";
 
-export const MARKER_LABELS: Record<MarkerType, string> = {
-  cut: "Cut",
-  important: "Important",
-  chapter: "Chapter",
-};
+export const MARKER_TYPES: readonly MarkerType[] = [
+  "important",
+  "cut",
+  "chapter",
+];
 
-export const defaultChapterTitle = (existing: readonly Marker[]) => {
+/** Formats the default title of the n-th chapter (localized by the UI). */
+export type ChapterTitleFormatter = (number: number) => string;
+
+const englishChapterTitle: ChapterTitleFormatter = (n) => `Chapter ${n}`;
+
+export const defaultChapterTitle = (
+  existing: readonly Marker[],
+  format: ChapterTitleFormatter = englishChapterTitle,
+) => {
   const chapters = existing.filter((m) => m.type === "chapter").length;
-  return `Chapter ${chapters + 1}`;
+  return format(chapters + 1);
 };
 
 // Creates a marker at the current media time (paused time excluded).
@@ -19,12 +27,14 @@ export const createMarker = ({
   now,
   existing,
   title,
+  formatChapterTitle,
 }: {
   type: MarkerType;
   clock: PauseClock;
   now: number;
   existing: readonly Marker[];
   title?: string;
+  formatChapterTitle?: ChapterTitleFormatter;
 }): Marker => {
   const timeMs = Math.round(elapsedMediaMs(clock, now));
   if (type !== "chapter") {
@@ -35,7 +45,9 @@ export const createMarker = ({
   return {
     type,
     timeMs,
-    title: trimmed ? trimmed : defaultChapterTitle(existing),
+    title: trimmed
+      ? trimmed
+      : defaultChapterTitle(existing, formatChapterTitle),
   };
 };
 

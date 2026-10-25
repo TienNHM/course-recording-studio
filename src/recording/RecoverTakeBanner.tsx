@@ -1,13 +1,15 @@
+import { History } from "lucide-react";
 import React, { useCallback, useState } from "react";
-import { createPortal } from "react-dom";
 import { FPS } from "../../config/fps";
 import {
   ProcessingStatus,
   ProcessStatus,
 } from "../components/ProcessingStatus";
 import { Button } from "../components/ui/button";
-import { formatMilliseconds } from "../helpers/format-time";
 import { deleteStoredFile, readStoredFile } from "../helpers/store-file";
+import { useFormat, useT } from "../i18n";
+import { findLesson, useCurrentLesson } from "../state/current-lesson";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { expectedFramesForDuration } from "./pause-clock";
 import {
   removeTakeManifest,
@@ -36,11 +38,21 @@ export const RecoverTakeBanner: React.FC<{
   readonly onHandled: (id: string) => void;
   readonly disabled: boolean;
 }> = ({ manifests, lessonPath, onHandled, disabled }) => {
+  const t = useT("recording");
+  const f = useFormat();
+  const { tree } = useCurrentLesson();
   const [status, setStatus] = useState<ProcessStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const manifest = manifests[0];
 
   const targetLesson = manifest?.lessonPath ?? lessonPath;
+  const targetTitle =
+    tree && targetLesson
+      ? (findLesson(tree, targetLesson)?.lesson.title ?? targetLesson)
+      : targetLesson;
+  const serverEnabled = Boolean(window.remotionServerEnabled);
 
   const recover = useCallback(async () => {
     if (!manifest || !targetLesson) {
@@ -48,6 +60,7 @@ export const RecoverTakeBanner: React.FC<{
     }
 
     setBusy(true);
+    setError(null);
     try {
       const sources: TakeSource[] = [];
       for (const source of manifest.sources) {
@@ -62,9 +75,7 @@ export const RecoverTakeBanner: React.FC<{
       }
 
       if (sources.length === 0) {
-        alert(
-          "No recorded data was found for this take. It can only be discarded.",
-        );
+        setError(t("recover.noData"));
         return;
       }
 
@@ -87,21 +98,15 @@ export const RecoverTakeBanner: React.FC<{
       setStatus(null);
       if (!(err instanceof TakeUploadAbortedError)) {
         console.error(err);
-        alert(`Recovering the take failed: ${(err as Error).message}`);
+        setError(t("recover.failed", { message: (err as Error).message }));
       }
     } finally {
       setBusy(false);
     }
-  }, [manifest, onHandled, targetLesson]);
+  }, [manifest, onHandled, t, targetLesson]);
 
   const discard = useCallback(async () => {
     if (!manifest) {
-      return;
-    }
-
-    if (
-      !window.confirm("Discard this unfinished take? This cannot be undone.")
-    ) {
       return;
     }
 
@@ -115,36 +120,66 @@ export const RecoverTakeBanner: React.FC<{
 
   const { durationMs } = resolveRecoveredTiming(manifest);
 
-  return createPortal(
+  return (
     <div
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex flex-row items-center gap-3 rounded-md border border-input bg-background px-4 py-3 shadow-lg text-sm"
       role="status"
+      className="flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning/10 p-3 text-body md:flex-row md:items-center"
     >
-      <div>
-        <div className="font-semibold">Recover unfinished take</div>
-        <div className="text-muted-foreground">
-          {new Date(manifest.startDate).toLocaleString()} ·{" "}
-          {formatMilliseconds(durationMs)} · {manifest.markers.length} markers
-          {targetLesson
-            ? ` → ${targetLesson}`
-            : " · Pick a lesson in the Library first"}
-          {manifests.length > 1 ? ` · ${manifests.length - 1} more` : ""}
+      <History
+        className="hidden h-4 w-4 shrink-0 text-warning md:block"
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold">{t("recover.title")}</div>
+        <div className="text-caption text-muted-foreground">
+          {t("recover.meta", {
+            date: f.formatDateTime(manifest.startDate),
+            duration: f.formatDuration(durationMs),
+            markers: t("live.markerCount", { count: manifest.markers.length }),
+          })}
+          {" · "}
+          {!serverEnabled
+            ? t("recover.noServer")
+            : targetTitle
+              ? t("recover.target", { lesson: targetTitle })
+              : t("recover.noTarget")}
+          {manifests.length > 1
+            ? ` · ${t("recover.more", { count: manifests.length - 1 })}`
+            : ""}
         </div>
-        {status ? <ProcessingStatus status={status} /> : null}
+        {status ? <ProcessingStatus className="mt-2" status={status} /> : null}
+        {error ? (
+          <div className="mt-1 text-caption text-destructive" role="alert">
+            {error}
+          </div>
+        ) : null}
       </div>
-      <Button
-        size="sm"
-        onClick={recover}
-        disabled={
-          busy || disabled || !targetLesson || !window.remotionServerEnabled
-        }
-      >
-        Recover
-      </Button>
-      <Button size="sm" variant="outline" onClick={discard} disabled={busy}>
-        Discard
-      </Button>
-    </div>,
-    document.body,
+      <div className="flex shrink-0 gap-2">
+        <Button
+          size="sm"
+          onClick={recover}
+          disabled={busy || disabled || !targetLesson || !serverEnabled}
+        >
+          {t("recover.recover")}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setConfirmOpen(true)}
+          disabled={busy}
+        >
+          {t("recover.discard")}
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={t("recover.discardConfirm.title")}
+        description={t("recover.discardConfirm.body")}
+        confirmLabel={t("recover.discardConfirm.confirm")}
+        tone="destructive"
+        onConfirm={discard}
+      />
+    </div>
   );
 };

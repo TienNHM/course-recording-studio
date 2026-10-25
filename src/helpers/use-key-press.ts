@@ -57,7 +57,10 @@ export const useKeyPress = ({
         }
 
         const doc = (event.target as Node | null)?.ownerDocument ?? document;
-        if (doc.querySelector('[role="dialog"]')) {
+        // Dialogs, open selects and menus own the keyboard
+        if (
+          doc.querySelector('[role="dialog"], [role="listbox"], [role="menu"]')
+        ) {
           return;
         }
       }

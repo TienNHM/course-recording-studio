@@ -25,8 +25,9 @@ export const downloadVideo = async ({
     mimeType,
     onProgress: (progress, abortFn) => {
       setStatus({
-        title: `Converting ${prefix}${endDate}.${getExtension(mimeType)}`,
-        description: `${Math.round(progress * 100)}% progress`,
+        step: "downloading",
+        file: `${prefix}${endDate}.${getExtension(mimeType)}`,
+        progress,
         abort: abortFn,
       });
     },

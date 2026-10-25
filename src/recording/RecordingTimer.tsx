@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { formatMilliseconds } from "../helpers/format-time";
+import { cn } from "../helpers/utils";
+import { useFormat } from "../i18n";
 import { elapsedMediaMs, PauseClock } from "./pause-clock";
 
 // Shows the media time of the take (paused time excluded).
@@ -9,6 +10,7 @@ export const RecordingTimer: React.FC<{
 }> = ({ clock, className }) => {
   const ref = useRef<HTMLSpanElement>(null);
   const [now, setNow] = useState(() => Date.now());
+  const { formatDuration } = useFormat();
 
   useEffect(() => {
     // Schedule on the window that displays the timer: when shown in the
@@ -19,14 +21,8 @@ export const RecordingTimer: React.FC<{
   }, []);
 
   return (
-    <span
-      ref={ref}
-      className={className}
-      style={{ fontVariantNumeric: "tabular-nums" }}
-    >
-      {formatMilliseconds(
-        elapsedMediaMs(clock, Math.max(now, clock.startedAt)),
-      )}
+    <span ref={ref} className={cn("timecode", className)}>
+      {formatDuration(elapsedMediaMs(clock, Math.max(now, clock.startedAt)))}
     </span>
   );
 };
