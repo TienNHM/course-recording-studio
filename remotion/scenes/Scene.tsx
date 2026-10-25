@@ -21,6 +21,7 @@ import type { ChapterType } from "../chapters/make-chapters";
 import { useRefreshOnPublicFolderChange } from "../helpers/refresh-on-public-folder-change";
 import { useScrollToCurrentScene } from "../helpers/scroll-to-current-scene";
 import { EndCard } from "./EndCard";
+import { LessonOutro } from "./LessonOutro/LessonOutro";
 import { NoRecordingsScene } from "./Placeholders/NoRecordingsScene";
 import { NoScenes } from "./Placeholders/NoScenes";
 import { RecorderScene } from "./Recorder";
@@ -98,6 +99,16 @@ const InnerScene: React.FC<
         canvasLayout={canvasLayout}
         channel={sceneAndMetadata.scene.channel}
         links={sceneAndMetadata.scene.links}
+      />
+    );
+  }
+
+  if (sceneAndMetadata.scene.type === "lessonoutro") {
+    return (
+      <LessonOutro
+        title={sceneAndMetadata.scene.title}
+        subtitle={sceneAndMetadata.scene.subtitle}
+        theme={theme}
       />
     );
   }

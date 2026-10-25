@@ -21,6 +21,7 @@ import { SquareChapter } from "../../chapters/square/SquareChapter";
 import { Actions } from "./ActionOverlay/Actions";
 import { Display } from "./Display";
 import { onBRollDragOver, onBRollDropHandler } from "./DragDropBRoll";
+import { Audio } from "@remotion/media";
 import { Webcam } from "./Webcam";
 
 export const VideoScene: React.FC<{
@@ -69,9 +70,15 @@ export const VideoScene: React.FC<{
 
   const { id } = useVideoConfig();
   const frame = useCurrentFrame();
+  const readOnly = sceneAndMetadata.options?.readOnly ?? false;
+  const separateAudio = sceneAndMetadata.options?.separateAudio ?? null;
 
   const onDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
+      if (readOnly) {
+        return;
+      }
+
       onBRollDropHandler({
         e,
         composition: id,
@@ -79,7 +86,7 @@ export const VideoScene: React.FC<{
         from: frame - B_ROLL_TRANSITION_DURATION,
       });
     },
-    [frame, id, sceneIndex],
+    [frame, id, readOnly, sceneIndex],
   );
 
   return (
@@ -138,10 +145,18 @@ export const VideoScene: React.FC<{
         <SrtPreviewAndEditor
           captions={sceneAndMetadata.cameras.captions}
           startFrame={startFrame}
+          endFrame={sceneAndMetadata.options ? trimAfter : null}
           theme={theme}
         ></SrtPreviewAndEditor>
       ) : null}
-      {env.isStudio ? (
+      {separateAudio ? (
+        <Audio
+          src={separateAudio}
+          trimBefore={startFrame}
+          trimAfter={trimAfter}
+        />
+      ) : null}
+      {env.isStudio && !readOnly ? (
         <Actions
           visible={hovered}
           sceneIndex={sceneIndex}

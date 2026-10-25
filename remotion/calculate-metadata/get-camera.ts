@@ -15,65 +15,102 @@ type CamerasAndScene = {
 
 const findMatchingFile = ({
   files,
-  compositionId,
+  folder,
   prefix,
   timestamp,
 }: {
   files: StaticFile[];
-  compositionId: string;
+  folder: string;
   prefix: string;
   timestamp: string;
 }): StaticFile | null => {
   const sub = files.find((_f) =>
-    _f.name.startsWith(`${compositionId}/${prefix}${timestamp}.`),
+    _f.name.startsWith(`${folder}/${prefix}${timestamp}.`),
   );
 
   return sub ?? null;
 };
 
+const getTimestamp = ({
+  file,
+  folder,
+  prefix,
+}: {
+  file: StaticFile;
+  folder: string;
+  prefix: string;
+}) => {
+  return (
+    file.name
+      // folder is case sensitive:
+      // Need to replace it first before calling .toLowerCase()
+      .replace(`${folder}/${prefix}`, "")
+      .toLowerCase()
+      .replace(".webm", "")
+      .replace(".mov", "")
+      .replace(".mkv", "")
+      .replace(".mp4", "")
+  );
+};
+
 const mapFile = ({
   file,
   files,
-  compositionId,
+  folder,
 }: {
   file: StaticFile;
   files: StaticFile[];
-  compositionId: string;
+  folder: string;
 }): Cameras | null => {
-  if (!file.name.startsWith(`${compositionId}/${WEBCAM_PREFIX}`)) {
+  const isWebcam = file.name.startsWith(`${folder}/${WEBCAM_PREFIX}`);
+  const isDisplay = file.name.startsWith(`${folder}/${DISPLAY_PREFIX}`);
+  if (!isWebcam && !isDisplay) {
     return null;
   }
 
-  const timestamp = file.name
-    // compositionId is case sensitive:
-    // Need to replace it first before calling .toLowerCase()
-    .replace(`${compositionId}/${WEBCAM_PREFIX}`, "")
-    .toLowerCase()
-    .replace(".webm", "")
-    .replace(".mov", "")
-    .replace(".mkv", "")
-    .replace(".mp4", "");
-
-  const display = findMatchingFile({
-    files,
-    compositionId,
-    prefix: DISPLAY_PREFIX,
-    timestamp,
+  const timestamp = getTimestamp({
+    file,
+    folder,
+    prefix: isWebcam ? WEBCAM_PREFIX : DISPLAY_PREFIX,
   });
+
+  if (isDisplay) {
+    // A take without a webcam: the display recording becomes the main
+    // recording and is shown fullscreen.
+    const webcam = findMatchingFile({
+      files,
+      folder,
+      prefix: WEBCAM_PREFIX,
+      timestamp,
+    });
+    if (webcam) {
+      // Will be picked up via the webcam file
+      return null;
+    }
+  }
+
+  const display = isWebcam
+    ? findMatchingFile({
+        files,
+        folder,
+        prefix: DISPLAY_PREFIX,
+        timestamp,
+      })
+    : null;
   const sub = findMatchingFile({
     files,
-    compositionId,
+    folder,
     prefix: CAPTIONS_PREFIX,
     timestamp,
   });
   const alternative1 = findMatchingFile({
     files,
-    compositionId,
+    folder,
     prefix: ALTERNATIVE1_PREFIX,
     timestamp,
   });
   const alternative2 = findMatchingFile({
-    compositionId,
+    folder,
     files,
     prefix: ALTERNATIVE2_PREFIX,
     timestamp,
@@ -89,26 +126,28 @@ const mapFile = ({
   };
 };
 
-const getCameras = (compositionId: string) => {
+const getCameras = (folder: string) => {
   const files = getStaticFiles().filter((f) =>
-    f.name.startsWith(compositionId),
+    f.name.startsWith(`${folder}/`),
   );
 
   const mappedCameras = files
-    .map((f) => mapFile({ file: f, files, compositionId }))
+    .map((f) => mapFile({ file: f, files, folder }))
     .filter(Boolean) as Cameras[];
 
   return mappedCameras.sort((a, b) => a.timestamp - b.timestamp);
 };
 
+// `folder` is the folder in public/ that contains the recordings
+// (for legacy projects, this is the composition ID).
 export const getAllCameras = ({
-  compositionId,
+  folder,
   scenes,
 }: {
-  compositionId: string;
+  folder: string;
   scenes: SelectableScene[];
 }) => {
-  const allCameras = getCameras(compositionId);
+  const allCameras = getCameras(folder);
   let videoIndex = -1;
 
   const scenesWithCameras = scenes.map((scene): CamerasAndScene => {

@@ -9,7 +9,8 @@ export const SrtPreviewAndEditor: React.FC<{
   captions: StaticFile;
   theme: Theme;
   startFrame: number;
-}> = ({ captions, startFrame, theme }) => {
+  endFrame: number | null;
+}> = ({ captions, startFrame, endFrame, theme }) => {
   const env = useRemotionEnvironment();
   // During rendering, you will get the actual .srt file instead of the preview.
   if (env.isRendering) {
@@ -18,7 +19,7 @@ export const SrtPreviewAndEditor: React.FC<{
 
   return (
     <CaptionOverlay file={captions} theme={theme} trimStart={startFrame}>
-      <SrtPreview startFrame={startFrame}></SrtPreview>
+      <SrtPreview startFrame={startFrame} endFrame={endFrame}></SrtPreview>
     </CaptionOverlay>
   );
 };

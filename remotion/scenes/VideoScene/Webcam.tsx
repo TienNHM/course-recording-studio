@@ -78,6 +78,7 @@ export const Webcam: React.FC<{
             trimBefore={startFrame}
             trimAfter={trimAfter}
             src={currentScene.cameras.webcam.src}
+            muted={currentScene.options?.muteWebcam ?? false}
             containerLayout={webcamLayout}
             videoSize={currentScene.videos.webcam}
             enableBlur={shouldEnableSceneBackgroundBlur(

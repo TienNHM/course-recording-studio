@@ -42,3 +42,6 @@ export const COLORS: { [key in Theme]: ColorTheme } = {
     ENDCARD_TEXT_COLOR: "white",
   },
 };
+
+// Theme used by the "lesson" composition (Course Recording Studio).
+export const LESSON_THEME: Theme = "dark";

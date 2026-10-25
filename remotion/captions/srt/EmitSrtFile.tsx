@@ -1,6 +1,5 @@
 import React, { useMemo } from "react";
-import { Artifact, useCurrentFrame } from "remotion";
-import { FPS } from "../../../config/fps";
+import { Artifact, useCurrentFrame, useVideoConfig } from "remotion";
 import { SceneAndMetadata } from "../../../config/scenes";
 import { combineSrt } from "./helpers/combine-srt";
 import { serializeSrt } from "./helpers/serialize-srt";
@@ -11,18 +10,19 @@ export const EmitSrtFile: React.FC<{
   scenesAndMetadata: SceneAndMetadata[];
 }> = ({ scenesAndMetadata }) => {
   const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
 
   const srtFile = useMemo(() => {
     const toCombine = scenesAndMetadata.map((scene) => {
       return {
-        offsetInMs: Math.round((scene.from * 1000) / FPS),
+        offsetInMs: Math.round((scene.from * 1000) / fps),
         srts: scene.type === "video-scene" ? scene.srt : [],
       };
     });
 
     const combined = combineSrt(toCombine);
     return serializeSrt(combined);
-  }, [scenesAndMetadata]);
+  }, [scenesAndMetadata, fps]);
 
   if (!srtFile) {
     return null;
