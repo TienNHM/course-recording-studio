@@ -12,6 +12,10 @@ import { editPlan } from "../../../config/course";
 import { getWhisperModel } from "../../../config/whisper";
 import { transcribeWav } from "../../captions/caption-file";
 import { ensureWhisper } from "../../captions/install-whisper";
+import {
+  dropCaptionsInEdgePauses,
+  fitCaptionsToPauses,
+} from "../../captions/whisper-captions";
 import { readLesson, writeJsonAtomic } from "../course-store";
 import { buildEditPlan } from "./edit-plan";
 import {
@@ -134,6 +138,9 @@ export const runProduction = async ({
       await extractAudio({ input: audioFile, output: wavFile, signal });
     }
 
+    // All pauses ≥ SILENCE_MIN_DETECT_MS: the edit plan uses them for the
+    // leading/trailing trim and cut markers, the preset only filters which
+    // ones are suggested as cuts.
     let silences: SilenceRange[] = [];
     if (wavFile && settings.autoDetectSilence) {
       ctx.update({
@@ -180,7 +187,7 @@ export const runProduction = async ({
       });
       ctx.update({ step: `Transcribing (${language}, ${model})` });
       let lastReported = -1;
-      captions = await transcribeWav({
+      const transcribed = await transcribeWav({
         wavFile,
         language,
         model,
@@ -193,6 +200,16 @@ export const runProduction = async ({
           lastReported = p;
           ctx.update({ progress: within(PROGRESS.transcribing, p) });
         },
+      });
+      // Whisper invents text in long silences at the start/end of a take,
+      // and its word timestamps drift into pauses.
+      captions = fitCaptionsToPauses({
+        captions: dropCaptionsInEdgePauses({
+          captions: transcribed,
+          pauses: silences,
+          durationMs,
+        }),
+        pauses: silences,
       });
     }
     if (captions) {

@@ -9,6 +9,11 @@ export const WHISPER_MODEL: WhisperModel = "medium.en";
 
 // English-only models are more accurate for English;
 // any other language needs a multilingual model.
+// large-v3-turbo was evaluated for Vietnamese and is not used: whisper.cpp
+// 1.6.0 (the newest Windows binary) has no DTW preset for it ("unknown DTW
+// preset 'large.v3.turbo'", exit code 3), so it only runs without token
+// timestamps, and its own word timestamps smear across long pauses. Its text
+// was not better either (English terms spelled out as "C-SAP-T-ZO-…").
 export const getWhisperModel = (
   language: CourseLanguage | null,
 ): WhisperModel => {

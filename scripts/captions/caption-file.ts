@@ -1,6 +1,6 @@
 import type { Caption } from "@remotion/captions";
 import type { Language, WhisperModel } from "@remotion/install-whisper-cpp";
-import { toCaptions, transcribe } from "@remotion/install-whisper-cpp";
+import { transcribe } from "@remotion/install-whisper-cpp";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { EOL, tmpdir } from "os";
 import path from "path";
@@ -11,8 +11,10 @@ import {
   WHISPER_REF,
 } from "../../config/whisper";
 import { extractAudio } from "../server/production/ffmpeg";
+import { whisperJsonToCaptions } from "./whisper-captions";
 
-// Transcribes an existing 16 kHz WAV file into @remotion/captions Caption[].
+// Transcribes an existing 16 kHz WAV file into @remotion/captions Caption[]
+// (one caption per word).
 export const transcribeWav = async ({
   wavFile,
   language,
@@ -37,9 +39,20 @@ export const transcribeWav = async ({
     signal,
     language,
     whisperCppVersion: WHISPER_REF,
+    // One item per whole word. Without it every item is a single BPE token,
+    // and tokens that split a multi-byte UTF-8 character (common in
+    // Vietnamese) are decoded separately into U+FFFD replacement characters.
+    // Passed as a raw flag: the `splitOnWord` option appends a "true" value,
+    // but whisper.cpp's --split-on-word takes none (a stray non-flag argument
+    // is treated as an extra input file).
+    additionalArgs: ["--split-on-word"],
   });
 
-  return toCaptions({ whisperCppOutput }).captions;
+  const captions = whisperJsonToCaptions(whisperCppOutput);
+  if (captions.some((c) => c.text.includes(String.fromCharCode(0xfffd)))) {
+    console.warn("Whisper output still contains broken characters (U+FFFD)");
+  }
+  return captions;
 };
 
 export const captionFile = async ({
