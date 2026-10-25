@@ -1,4 +1,3 @@
-import { CameraIcon, MicIcon } from "lucide-react";
 import React, {
   useCallback,
   useEffect,
@@ -11,22 +10,14 @@ import { createPortal } from "react-dom";
 import type { Marker, MarkerType } from "../config/course";
 import { FPS } from "../config/fps";
 import { truthy } from "../remotion/helpers/truthy";
-import { RecordCircle } from "./BlinkingCircle";
-import { ProcessStatus } from "./components/ProcessingStatus";
-import { Button } from "./components/ui/button";
 import { Prefix } from "./helpers/prefixes";
 import {
   FinishedRecording,
   startMediaRecorder,
 } from "./helpers/start-media-recorder";
 import { useKeyPress } from "./helpers/use-key-press";
+import { useT } from "./i18n";
 import { ControlsMode, RecordingControls } from "./recording/RecordingControls";
-import { RecoverTakeBanner } from "./recording/RecoverTakeBanner";
-import {
-  fetchFreeDiskBytes,
-  formatGigabytes,
-  LOW_DISK_SPACE_BYTES,
-} from "./recording/disk-space";
 import { addMarker, createMarker } from "./recording/markers";
 import {
   createPauseClock,
@@ -39,14 +30,14 @@ import {
   totalPausedMs,
 } from "./recording/pause-clock";
 import {
-  loadTakeManifests,
-  removeTakeManifest,
-  saveTakeManifest,
-  TakeManifest,
-} from "./recording/take-manifest";
+  RecorderPhase,
+  resolveShortcut,
+  SHORTCUT_KEYS,
+} from "./recording/shortcuts";
+import { saveTakeManifest, TakeManifest } from "./recording/take-manifest";
 import { useDocumentPip } from "./recording/use-document-pip";
-import { useMediaSources } from "./state/media-sources";
-import { visibleByDefault } from "./state/visible-views";
+import { StreamState } from "./state/media-sources";
+import { useThemeMirror } from "./theme/PreferencesProvider";
 
 export type CurrentRecorder = {
   recorder: MediaRecorder;
@@ -60,7 +51,7 @@ export type CurrentRecorder = {
 };
 
 // "Paused" is a sub-state of "recording" (see `isRecordingPaused()`), so that
-// every `type === "recording"` check (device pickers, top bar) keeps treating
+// every `type === "recording"` check (device pickers, header) keeps treating
 // a paused take as in progress.
 export type RecordingStatus =
   | {
@@ -84,6 +75,8 @@ export type RecordingStatus =
       // Wall-clock time the recorders started
       startedAt: number;
       markers: Marker[];
+      // Lesson the take was recorded for
+      lessonPath: string | null;
     };
 
 export type OngoingRecording = {
@@ -97,7 +90,7 @@ export type OngoingRecording = {
 export const isRecordingPaused = (status: RecordingStatus) =>
   status.type === "recording" && isClockPaused(status.ongoing.clock);
 
-const COUNTDOWN_SECONDS = 3;
+export const COUNTDOWN_SECONDS = 3;
 
 const manifestFromOngoing = (
   ongoing: OngoingRecording,
@@ -121,20 +114,45 @@ const manifestFromOngoing = (
   ...extra,
 });
 
-export const RecordButton: React.FC<{
+export type ActiveSource = {
+  readonly prefix: Prefix;
+  readonly streamState: StreamState;
+};
+
+/**
+ * The recording session: countdown, MediaRecorders, pause clock, markers,
+ * floating Picture-in-Picture panel and keyboard shortcuts. The recorder UI
+ * (src/recording/Recorder.tsx) renders the returned state.
+ */
+export const useRecordingSession = ({
+  recordingStatus,
+  setRecordingStatus,
+  activeSources,
+  micStream,
+  lessonPath,
+  canStart,
+  busy,
+  lowDisk,
+  onArmed,
+  onError,
+  announce,
+}: {
   recordingStatus: RecordingStatus;
   setRecordingStatus: React.Dispatch<React.SetStateAction<RecordingStatus>>;
-  showAllViews: boolean;
-  processingStatus: ProcessStatus | null;
+  // Visible slots with a live stream: they are all recorded
+  activeSources: readonly ActiveSource[];
+  micStream: MediaStream | null;
   // Relative to public/, e.g. courses/<course>/<module>/<lesson>
   lessonPath: string | null;
-}> = ({
-  setRecordingStatus,
-  recordingStatus,
-  showAllViews,
-  processingStatus,
-  lessonPath,
+  canStart: boolean;
+  // A take is being saved: no new recording until it's done
+  busy: boolean;
+  lowDisk: boolean;
+  onArmed: () => void;
+  onError: (message: string) => void;
+  announce: (message: string) => void;
 }) => {
+  const t = useT("recording");
   const statusRef = useRef(recordingStatus);
   useLayoutEffect(() => {
     statusRef.current = recordingStatus;
@@ -142,87 +160,21 @@ export const RecordButton: React.FC<{
   const stoppingRef = useRef(false);
 
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [diskConfirmOpen, setDiskConfirmOpen] = useState(false);
   const [chapterDraft, setChapterDraft] = useState("");
   const chapterDraftRef = useRef(chapterDraft);
   useLayoutEffect(() => {
     chapterDraftRef.current = chapterDraft;
   }, [chapterDraft]);
 
-  // Takes left over from a previous session (crash, reload, not uploaded)
-  const [recoverable, setRecoverable] = useState<TakeManifest[]>(() =>
-    loadTakeManifests(),
+  const pip = useDocumentPip(t("live.pipTitle"));
+  // The PiP window follows mode / palette / language live
+  useThemeMirror(pip.pipWindow?.document ?? null);
+
+  const formatChapterTitle = useCallback(
+    (n: number) => t("markers.defaultChapter", { number: n }),
+    [t],
   );
-  const onRecoveredHandled = useCallback((id: string) => {
-    setRecoverable((prev) => prev.filter((m) => m.id !== id));
-  }, []);
-
-  const pip = useDocumentPip();
-
-  const discardVideos = useCallback(async () => {
-    if (recordingStatus.type !== "recording-finished") {
-      throw new Error("Recording not finished");
-    }
-    for (const blob of recordingStatus.blobs) {
-      await blob.releaseData();
-    }
-    removeTakeManifest(String(recordingStatus.startDate));
-
-    setRecordingStatus({ type: "idle" });
-  }, [recordingStatus, setRecordingStatus]);
-
-  const mediaSources = useMediaSources().mediaSources;
-
-  const activeSources = useMemo(() => {
-    return Object.entries(mediaSources).filter(([prefix, source]) => {
-      return (
-        (showAllViews || visibleByDefault[prefix as Prefix]) &&
-        source.streamState.type === "loaded"
-      );
-    });
-  }, [mediaSources, showAllViews]);
-
-  const videoDeviceCount = useMemo(() => {
-    return activeSources.filter(([, source]) => {
-      return source.videoDevice !== null;
-    }).length;
-  }, [activeSources]);
-  const audioDeviceCount = useMemo(() => {
-    return activeSources.filter(([, source]) => {
-      return source.audioDevice !== null;
-    }).length;
-  }, [activeSources]);
-
-  // Stream used by the level meter: prefer the webcam slot (microphone)
-  const audioSource = useMemo(() => {
-    const withAudio = activeSources
-      .map(([prefix, source]) => ({ prefix, state: source.streamState }))
-      .filter(
-        ({ state }) =>
-          state.type === "loaded" && state.stream.getAudioTracks().length > 0,
-      );
-    return (
-      withAudio.find((s) => s.prefix === "webcam")?.state ??
-      withAudio[0]?.state ??
-      null
-    );
-  }, [activeSources]);
-
-  const blockedReason = useMemo((): string | null => {
-    const hasVideo = activeSources.some(
-      ([, s]) =>
-        s.streamState.type === "loaded" &&
-        s.streamState.stream.getVideoTracks().length > 0,
-    );
-    if (!hasVideo) {
-      return "Select a screen or webcam to record";
-    }
-
-    if (audioSource === null) {
-      return "No audio: pick a microphone or share the screen with audio";
-    }
-
-    return null;
-  }, [activeSources, audioSource]);
 
   const startRecording = useCallback(async () => {
     const startDate = Date.now();
@@ -231,10 +183,10 @@ export const RecordButton: React.FC<{
       recorders = (
         await Promise.all(
           activeSources.map(
-            ([prefix, source]): Promise<CurrentRecorder | null> => {
+            ({ prefix, streamState }): Promise<CurrentRecorder | null> => {
               return startMediaRecorder({
-                prefix: prefix as Prefix,
-                source: source.streamState,
+                prefix,
+                source: streamState,
                 timestamp: startDate,
               });
             },
@@ -244,7 +196,7 @@ export const RecordButton: React.FC<{
     } catch (err) {
       console.error(err);
       pip.close();
-      alert(`Could not start recording: ${(err as Error).message}`);
+      onError(t("errors.startFailed", { message: (err as Error).message }));
       return;
     }
 
@@ -258,7 +210,16 @@ export const RecordButton: React.FC<{
     saveTakeManifest(manifestFromOngoing(ongoing));
     setChapterDraft("");
     setRecordingStatus({ type: "recording", ongoing });
-  }, [activeSources, lessonPath, pip, setRecordingStatus]);
+    announce(t("announce.started"));
+  }, [
+    activeSources,
+    announce,
+    lessonPath,
+    onError,
+    pip,
+    setRecordingStatus,
+    t,
+  ]);
 
   // Countdown before the recorders actually start
   useEffect(() => {
@@ -280,38 +241,40 @@ export const RecordButton: React.FC<{
   const cancelCountdown = useCallback(() => {
     setCountdown(null);
     pip.close();
-  }, [pip]);
+    announce(t("announce.cancelled"));
+  }, [announce, pip, t]);
 
   // Must run inside a user gesture (click / key press): it opens the
   // floating Picture-in-Picture panel.
-  const arm = useCallback(async () => {
-    if (
-      blockedReason !== null ||
-      processingStatus !== null ||
-      countdown !== null ||
-      statusRef.current.type === "recording"
-    ) {
-      return;
-    }
-
-    const pipPromise = pip.open();
-
-    const freeBytes = await fetchFreeDiskBytes();
-    if (freeBytes !== null && freeBytes < LOW_DISK_SPACE_BYTES) {
-      const proceed = window.confirm(
-        `Only ${formatGigabytes(freeBytes)} of disk space is left. A long take may not fit. Record anyway?`,
-      );
-      if (!proceed) {
-        await pipPromise;
-        pip.close();
+  const arm = useCallback(
+    (options: { ignoreLowDisk?: boolean } = {}) => {
+      if (
+        !canStart ||
+        busy ||
+        countdown !== null ||
+        statusRef.current.type === "recording"
+      ) {
         return;
       }
-    }
 
-    setCountdown(COUNTDOWN_SECONDS);
-  }, [blockedReason, countdown, pip, processingStatus]);
+      if (lowDisk && !options.ignoreLowDisk) {
+        setDiskConfirmOpen(true);
+        return;
+      }
 
-  const onStop = useCallback(async () => {
+      pip.open();
+      onArmed();
+      setCountdown(COUNTDOWN_SECONDS);
+      announce(t("announce.countdown", { seconds: COUNTDOWN_SECONDS }));
+    },
+    [announce, busy, canStart, countdown, lowDisk, onArmed, pip, t],
+  );
+
+  const confirmLowDisk = useCallback(() => {
+    arm({ ignoreLowDisk: true });
+  }, [arm]);
+
+  const stop = useCallback(async () => {
     const current = statusRef.current;
     if (current.type !== "recording" || stoppingRef.current) {
       return;
@@ -353,18 +316,18 @@ export const RecordButton: React.FC<{
         startDate: latest.startDate,
         startedAt: latest.clock.startedAt,
         markers: latest.markers,
+        lessonPath: latest.lessonPath,
       });
+      announce(t("announce.stopped"));
     } catch (err) {
       console.error(err);
       setRecordingStatus({ type: "idle" });
-      alert(
-        `Recording failed: ${(err as Error).message}. Reload the page to recover what was recorded.`,
-      );
+      onError(t("errors.recordingFailed", { message: (err as Error).message }));
     } finally {
       stoppingRef.current = false;
       pip.close();
     }
-  }, [pip, setRecordingStatus]);
+  }, [announce, onError, pip, setRecordingStatus, t]);
 
   const togglePause = useCallback(() => {
     const current = statusRef.current;
@@ -392,7 +355,8 @@ export const RecordButton: React.FC<{
         : pauseClock(prev.ongoing.clock, now);
       return { ...prev, ongoing: { ...prev.ongoing, clock } };
     });
-  }, [setRecordingStatus]);
+    announce(wasPaused ? t("announce.resumed") : t("announce.paused"));
+  }, [announce, setRecordingStatus, t]);
 
   const onMarker = useCallback(
     (type: MarkerType) => {
@@ -413,6 +377,7 @@ export const RecordButton: React.FC<{
           now,
           existing: prev.ongoing.markers,
           title,
+          formatChapterTitle,
         });
         return {
           ...prev,
@@ -425,8 +390,10 @@ export const RecordButton: React.FC<{
       if (type === "chapter") {
         setChapterDraft("");
       }
+
+      announce(t("announce.marker", { type: t(`markers.${type}`) }));
     },
-    [setRecordingStatus],
+    [announce, formatChapterTitle, setRecordingStatus, t],
   );
 
   // Keep the recovery manifest up to date while recording
@@ -442,6 +409,8 @@ export const RecordButton: React.FC<{
     return () => clearInterval(interval);
   }, [recordingStatus]);
 
+  // A source that ends (screen sharing stopped from the browser bar, camera
+  // unplugged) stops the take.
   useEffect(() => {
     if (recordingStatus.type !== "recording") {
       return;
@@ -454,7 +423,7 @@ export const RecordButton: React.FC<{
         track.addEventListener(
           "ended",
           () => {
-            onStop();
+            stop();
           },
           { once: true, signal: controller.signal },
         );
@@ -464,7 +433,7 @@ export const RecordButton: React.FC<{
     return () => {
       controller.abort();
     };
-  }, [recordingStatus, onStop]);
+  }, [recordingStatus, stop]);
 
   // Stop the recorders only when the component goes away (not on every
   // status change, e.g. pause or a new marker).
@@ -479,58 +448,52 @@ export const RecordButton: React.FC<{
     };
   }, []);
 
-  const disabled = blockedReason !== null || processingStatus !== null;
-
-  const onPressR = useCallback(() => {
-    if (countdown !== null) {
-      cancelCountdown();
-      return;
-    }
-
-    if (statusRef.current.type === "recording") {
-      onStop();
-    } else if (statusRef.current.type === "idle") {
-      arm();
-    }
-  }, [arm, cancelCountdown, countdown, onStop]);
+  const phase: RecorderPhase =
+    countdown !== null
+      ? "countdown"
+      : recordingStatus.type === "recording"
+        ? "recording"
+        : recordingStatus.type === "recording-finished"
+          ? "finished"
+          : "idle";
 
   const onShortcut = useCallback(
     (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
-      if (key === "escape") {
-        if (countdown !== null) {
+      const action = resolveShortcut(event.key, phase);
+      switch (action) {
+        case "start":
+          arm();
+          break;
+        case "stop":
+          stop();
+          break;
+        case "cancelCountdown":
           cancelCountdown();
-        }
-
-        return;
+          break;
+        case "togglePause":
+          togglePause();
+          break;
+        case "markImportant":
+          onMarker("important");
+          break;
+        case "markCut":
+          onMarker("cut");
+          break;
+        case "markChapter":
+          onMarker("chapter");
+          break;
+        default:
+          return;
       }
 
-      if (statusRef.current.type !== "recording") {
-        return;
-      }
-
-      if (key === "p") {
-        togglePause();
-      } else if (key === "m") {
-        onMarker("important");
-      } else if (key === "b") {
-        onMarker("cut");
-      } else if (key === "c") {
-        onMarker("chapter");
-      }
+      event.preventDefault();
     },
-    [cancelCountdown, countdown, onMarker, togglePause],
+    [arm, cancelCountdown, onMarker, phase, stop, togglePause],
   );
 
-  const shortcutKeys = useMemo(() => ["p", "m", "b", "c", "escape"], []);
+  const shortcutKeys = useMemo(() => [...SHORTCUT_KEYS], []);
 
   // In-page hotkeys
-  useKeyPress({
-    keys: ["r"],
-    callback: onPressR,
-    metaKey: false,
-    shortcut: true,
-  });
   useKeyPress({
     keys: shortcutKeys,
     callback: onShortcut,
@@ -546,11 +509,6 @@ export const RecordButton: React.FC<{
     target: pip.pipWindow?.document ?? null,
     enabled: pip.pipWindow !== null,
   });
-
-  const onDiscardAndRetake = useCallback(async () => {
-    // Open the panel while we still have the user gesture
-    await Promise.all([discardVideos(), arm()]);
-  }, [arm, discardVideos]);
 
   const controlsMode: ControlsMode | null =
     countdown !== null
@@ -569,12 +527,12 @@ export const RecordButton: React.FC<{
         mode={controlsMode}
         variant={variant}
         onTogglePause={togglePause}
-        onStop={onStop}
+        onStop={stop}
         onMarker={onMarker}
         onCancelCountdown={cancelCountdown}
         chapterDraft={chapterDraft}
         setChapterDraft={setChapterDraft}
-        audioSource={audioSource}
+        micStream={micStream}
       />
     ) : null;
 
@@ -583,62 +541,21 @@ export const RecordButton: React.FC<{
       ? createPortal(renderControls("panel"), pip.pipWindow.document.body)
       : null;
 
-  if (controlsMode) {
-    return (
-      <>
-        {renderControls("inline")}
-        {pipPortal}
-      </>
-    );
-  }
-
-  return (
-    <>
-      <div title={disabled && blockedReason ? blockedReason : undefined}>
-        <Button
-          variant="outline"
-          type="button"
-          disabled={disabled}
-          title="Press R to start recording"
-          className="flex flex-row items-center pl-3 pr-0 py-0"
-          onClick={
-            recordingStatus.type === "recording-finished"
-              ? onDiscardAndRetake
-              : arm
-          }
-        >
-          <RecordCircle />
-          <div className="w-2"></div>
-          <div>
-            {blockedReason
-              ? blockedReason
-              : recordingStatus.type === "recording-finished"
-                ? "Discard and retake"
-                : "Start recording"}
-          </div>
-          <div className="w-3"></div>
-          {videoDeviceCount > 0 && !disabled && (
-            <div className="flex flex-row items-center gap-1 border-l-[1px] h-full px-2">
-              <CameraIcon className="w-5" />
-              <div>{videoDeviceCount}</div>
-            </div>
-          )}
-          {audioDeviceCount > 0 && !disabled && (
-            <div className="flex flex-row items-center gap-1 border-l-[1px] h-full px-2">
-              <MicIcon className="w-5" />
-              <div>{audioDeviceCount}</div>
-            </div>
-          )}
-        </Button>
-      </div>
-      {recordingStatus.type === "idle" ? (
-        <RecoverTakeBanner
-          manifests={recoverable}
-          lessonPath={lessonPath}
-          onHandled={onRecoveredHandled}
-          disabled={processingStatus !== null}
-        />
-      ) : null}
-    </>
-  );
+  return {
+    phase,
+    countdown,
+    arm,
+    stop,
+    cancelCountdown,
+    togglePause,
+    onMarker,
+    controlsMode,
+    renderControls,
+    pipPortal,
+    pipSupported: pip.supported,
+    pipOpen: pip.pipWindow !== null,
+    diskConfirmOpen,
+    setDiskConfirmOpen,
+    confirmLowDisk,
+  };
 };

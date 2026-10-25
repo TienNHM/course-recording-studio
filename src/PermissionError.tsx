@@ -1,21 +1,25 @@
+import { MicOff } from "lucide-react";
 import React from "react";
-
-const outer: React.CSSProperties = {
-  width: "100%",
-  position: "absolute",
-  height: "100%",
-  justifyContent: "center",
-  alignItems: "center",
-  display: "flex",
-  fontSize: "0.9em",
-  color: "#ddd",
-};
+import { Button } from "./components/ui/button";
+import { useT } from "./i18n";
+import { CenteredMessage, RecorderShell } from "./recording/RecorderShell";
 
 export const PermissionError: React.FC = () => {
+  const t = useT("recording");
   return (
-    <div style={outer}>
-      This device does not seem to be able to capture both video and audio.
-      <br /> Is there a camera and microphone connected?
-    </div>
+    <RecorderShell>
+      <CenteredMessage
+        tone="warning"
+        icon={<MicOff className="h-6 w-6" aria-hidden />}
+        title={t("permission.noDeviceTitle")}
+        action={
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            {t("permission.reload")}
+          </Button>
+        }
+      >
+        {t("permission.noDeviceBody")}
+      </CenteredMessage>
+    </RecorderShell>
   );
 };

@@ -88,11 +88,7 @@ export const uploadTakeToLesson = async ({
   for (const source of lessonSources) {
     const label = `${source.prefix}.${getExtension(source.mimeType)}`;
     let aborted = false;
-    setStatus({
-      title: `Converting ${label}`,
-      description: "Starting...",
-      abort: null,
-    });
+    setStatus({ step: "converting", file: label, progress: 0, abort: null });
 
     const original = await source.getData();
     let toUpload: Blob;
@@ -102,8 +98,9 @@ export const uploadTakeToLesson = async ({
         mimeType: source.mimeType,
         onProgress: (progress, abortFn) => {
           setStatus({
-            title: `Converting ${label}`,
-            description: `${Math.round(progress * 100)}% progress`,
+            step: "converting",
+            file: label,
+            progress,
             abort: () => {
               aborted = true;
               abortFn();
@@ -121,11 +118,7 @@ export const uploadTakeToLesson = async ({
       toUpload = original;
     }
 
-    setStatus({
-      title: `Copying ${label} to public/${lessonPath}`,
-      description: "Copying in progress",
-      abort: null,
-    });
+    setStatus({ step: "copying", file: label, progress: null, abort: null });
     await uploadFileToServer({
       blob: toUpload,
       takeId,
@@ -136,11 +129,7 @@ export const uploadTakeToLesson = async ({
     });
   }
 
-  setStatus({
-    title: "Saving take",
-    description: "Markers and session",
-    abort: null,
-  });
+  setStatus({ step: "finishing", file: null, progress: null, abort: null });
   await uploadTakeFile({
     lessonPath,
     takeId,

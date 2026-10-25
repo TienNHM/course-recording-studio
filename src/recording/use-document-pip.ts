@@ -24,7 +24,7 @@ export const isDocumentPipSupported = () => getApi() !== null;
 
 // Copies the stylesheets of the main page so Tailwind classes work in the PiP
 // window too.
-const copyStyles = (target: Window) => {
+const copyStyles = (target: Window, title: string) => {
   for (const sheet of Array.from(document.styleSheets)) {
     try {
       const css = Array.from(sheet.cssRules)
@@ -46,15 +46,27 @@ const copyStyles = (target: Window) => {
 
   // Mode class, data-palette and lang (live updates: useThemeMirror)
   applyThemeToDocument(target.document);
-  target.document.title = "Recording controls";
-  target.document.body.className = "bg-background text-foreground";
+  target.document.title = title;
+  target.document.body.className =
+    "bg-background font-sans text-foreground antialiased";
   target.document.body.style.margin = "0";
   target.document.body.style.height = "auto";
 };
 
-export const useDocumentPip = () => {
+export const PIP_SIZE = { width: 340, height: 270 };
+
+export const useDocumentPip = (title: string) => {
   const [pipWindow, setPipWindow] = useState<Window | null>(null);
   const pendingRef = useRef<Promise<Window | null> | null>(null);
+  const titleRef = useRef(title);
+
+  // Keep the window title in the current language
+  useEffect(() => {
+    titleRef.current = title;
+    if (pipWindow) {
+      pipWindow.document.title = title;
+    }
+  }, [pipWindow, title]);
 
   // Must be called synchronously from a user gesture (click / key press).
   const open = useCallback((): Promise<Window | null> => {
@@ -73,9 +85,9 @@ export const useDocumentPip = () => {
     }
 
     const promise = api
-      .requestWindow({ width: 360, height: 250 })
+      .requestWindow(PIP_SIZE)
       .then((win) => {
-        copyStyles(win);
+        copyStyles(win, titleRef.current);
         win.addEventListener(
           "pagehide",
           () => {

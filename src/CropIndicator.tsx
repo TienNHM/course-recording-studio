@@ -33,17 +33,20 @@ export const CropIndicator: React.FC<{
   }, [videoSize]);
 
   const cropIndicator: React.CSSProperties = useMemo(() => {
-    return {
-      border: "2px solid #F7D449",
-      borderRadius: 10,
-      ...cropIndicatorRect,
-    };
+    return { ...cropIndicatorRect };
   }, [cropIndicatorRect]);
 
   return (
-    <AbsoluteFill ref={ref}>
+    <AbsoluteFill
+      ref={ref}
+      className="pointer-events-none overflow-hidden"
+      aria-hidden
+    >
       <AbsoluteFill style={videoSize ?? undefined}>
-        <AbsoluteFill style={cropIndicator} />
+        <AbsoluteFill
+          className="rounded-lg border-2 border-dashed border-primary shadow-[0_0_0_9999px_hsl(var(--background)/0.35)]"
+          style={cropIndicator}
+        />
       </AbsoluteFill>
     </AbsoluteFill>
   );

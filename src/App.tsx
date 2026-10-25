@@ -1,19 +1,10 @@
-import React, { useCallback, useMemo, useState } from "react";
-import {
-  ALTERNATIVE1_PREFIX,
-  ALTERNATIVE2_PREFIX,
-  DISPLAY_PREFIX,
-  WEBCAM_PREFIX,
-} from "../config/cameras";
+import React, { useCallback } from "react";
 import "./App.css";
-import type { RecordingStatus } from "./RecordButton";
 import { DevicePermission } from "./DevicePermission";
-import { RecordingView } from "./RecordingView";
-import { TopBar } from "./TopBar";
 import { WaitingForDevices } from "./WaitingForDevices";
 import { EnsureBrowserSupport } from "./components/EnsureBrowserSupport";
-import { Button } from "./components/ui/button";
 import { LibraryPage } from "./library/LibraryPage";
+import { Recorder } from "./recording/Recorder";
 import { ReviewPage } from "./review/ReviewPage";
 import { StyleguidePage } from "./styleguide/StyleguidePage";
 import {
@@ -23,126 +14,28 @@ import {
 import { MediaSourcesProvider } from "./state/media-sources";
 import { useView } from "./state/view";
 
-const outer: React.CSSProperties = {
-  height: "100%",
-  display: "flex",
-  flexDirection: "column",
-};
-
-const gridContainer: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(2, 1fr)",
-  alignItems: "center",
-  justifyItems: "center",
-  flex: 1,
-  minWidth: 0,
-  minHeight: 0,
-  gap: 10,
-  margin: 10,
-  marginTop: 2,
-};
-
-const Recorder: React.FC<{
+const RecordView: React.FC<{
   readonly onBackToLibrary: () => void;
-}> = ({ onBackToLibrary }) => {
-  const [recordingStatus, setRecordingStatus] = useState<RecordingStatus>({
-    type: "idle",
-  });
-
-  const [showAllViews, setShowAllViews] = useState<boolean>(
-    localStorage.getItem("showAlternativeViews") === "true",
-  );
-
-  const dynamicGridContainer = useMemo(() => {
-    if (showAllViews) {
-      return { ...gridContainer, gridTemplateRows: "repeat(2, 1fr)" };
-    }
-
-    return { ...gridContainer, maxHeight: "50%" };
-  }, [showAllViews]);
-
-  const handleShowMore = useCallback(() => {
-    setShowAllViews(true);
-    localStorage.setItem("showAlternativeViews", "true");
-  }, []);
-
-  const handleShowLess = useCallback(() => {
-    setShowAllViews(false);
-    localStorage.setItem("showAlternativeViews", "false");
-  }, []);
-
-  return (
-    <EnsureBrowserSupport>
-      <WaitingForDevices>
-        <MediaSourcesProvider>
-          <div style={outer}>
-            <TopBar
-              setRecordingStatus={setRecordingStatus}
-              recordingStatus={recordingStatus}
-              showAllViews={showAllViews}
-              onBackToLibrary={onBackToLibrary}
-            />
-            <div style={dynamicGridContainer}>
-              <RecordingView
-                showAllViews={showAllViews}
-                recordingStatus={recordingStatus}
-                prefix={WEBCAM_PREFIX}
-              />
-              <RecordingView
-                showAllViews={showAllViews}
-                recordingStatus={recordingStatus}
-                prefix={DISPLAY_PREFIX}
-              />
-              <RecordingView
-                showAllViews={showAllViews}
-                recordingStatus={recordingStatus}
-                prefix={ALTERNATIVE1_PREFIX}
-              />
-              <RecordingView
-                showAllViews={showAllViews}
-                recordingStatus={recordingStatus}
-                prefix={ALTERNATIVE2_PREFIX}
-              />
-            </div>
-
-            <div style={{ marginBottom: 10, textAlign: "center" }}>
-              {showAllViews ? (
-                <Button
-                  variant={"ghost"}
-                  onClick={handleShowLess}
-                  style={{ margin: "0px 10px", width: 100 }}
-                >
-                  Show Less
-                </Button>
-              ) : (
-                <Button
-                  variant={"ghost"}
-                  onClick={handleShowMore}
-                  style={{ margin: "0px 10px" }}
-                >
-                  Show more views
-                </Button>
-              )}
-            </div>
-          </div>
-        </MediaSourcesProvider>
-      </WaitingForDevices>
-    </EnsureBrowserSupport>
-  );
-};
-
-const RecordView: React.FC<{ onBackToLibrary: () => void }> = ({
-  onBackToLibrary,
-}) => {
+  readonly onReview: () => void;
+}> = ({ onBackToLibrary, onReview }) => {
   const { lesson, tree, error } = useCurrentLesson();
   // Wait for the lesson to load so we know whether to ask for the camera.
   if (tree === null && error === null) {
     return null;
   }
+
   return (
-    <DevicePermission requireCamera={lesson?.recordingProfile.webcam ?? false}>
-      <Recorder onBackToLibrary={onBackToLibrary} />
-    </DevicePermission>
+    <EnsureBrowserSupport>
+      <DevicePermission
+        requireCamera={lesson?.recordingProfile.webcam ?? false}
+      >
+        <WaitingForDevices>
+          <MediaSourcesProvider>
+            <Recorder onBackToLibrary={onBackToLibrary} onReview={onReview} />
+          </MediaSourcesProvider>
+        </WaitingForDevices>
+      </DevicePermission>
+    </EnsureBrowserSupport>
   );
 };
 
@@ -161,7 +54,7 @@ const App = () => {
       ) : view === "styleguide" ? (
         <StyleguidePage onBack={showLibrary} />
       ) : (
-        <RecordView onBackToLibrary={showLibrary} />
+        <RecordView onBackToLibrary={showLibrary} onReview={showReview} />
       )}
     </CurrentLessonProvider>
   );
