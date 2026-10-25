@@ -57,10 +57,10 @@ size=N/A time=00:00:05.00 bitrate=N/A speed= 100x
       parseSilenceDetect("silence_start: -0.01\nsilence_end: 2", 5000),
     ).toEqual([{ startMs: 0, endMs: 2000 }]);
   });
-  test("detection minimum follows the preset", () => {
-    expect(getDetectionMinMs("conservative")).toBe(2500);
-    expect(getDetectionMinMs("balanced")).toBe(2500);
-    expect(getDetectionMinMs("aggressive")).toBe(1500);
+  test("every preset detects all pauses ≥ 0.5 s", () => {
+    expect(getDetectionMinMs("conservative")).toBe(500);
+    expect(getDetectionMinMs("balanced")).toBe(500);
+    expect(getDetectionMinMs("aggressive")).toBe(500);
   });
 });
 

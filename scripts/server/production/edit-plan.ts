@@ -20,8 +20,14 @@ export const KEEP_BEFORE_CUT_MS = 250;
 export const KEEP_AFTER_CUT_MS = 350;
 // Kept segments shorter than this are dropped (they would only be a flash).
 export const MIN_SEGMENT_MS = 500;
-// A "cut" marker without a preceding silence removes at most this much.
-export const MARKER_CUT_LOOKBACK_MS = 15000;
+// A "cut" marker removes back to the latest pause that ends at most this long
+// before the mistake ends.
+export const MARKER_CUT_LOOKBACK_MS = 30000;
+// Without such a pause it removes only this much (it never guesses further).
+export const MARKER_CUT_FALLBACK_MS = 3000;
+// A marker pressed this soon after a pause ends (reaction time, the speaker
+// already started the retake) counts as pressed during that pause.
+export const MARKER_GRACE_MS = 500;
 // A silence this close to the start/end of the take counts as leading/trailing.
 export const EDGE_TOLERANCE_MS = 200;
 
@@ -154,9 +160,12 @@ export const relocateChapters = (
 
 const isWord = (c: Caption) => c.text.trim().length > 0;
 
-// Leading/trailing trim. Uses the first/last spoken word when captions exist
-// (like remotion/calculate-metadata/get-start-end-frame.ts), otherwise a
-// silence touching the start/end of the take.
+// Leading/trailing trim. Detected pauses touching the start/end of the take
+// are preferred: whisper's edge timestamps are unreliable (the first word
+// often starts at 0 ms and the last one ends at the end of the file, because
+// the edges absorb the surrounding silence). The first/last caption words
+// (like remotion/calculate-metadata/get-start-end-frame.ts) are only used when
+// no pauses were detected at all (e.g. silence detection was off).
 export const computeTrim = ({
   durationMs,
   silences,
@@ -173,7 +182,7 @@ export const computeTrim = ({
   const first = words[0];
   const last = words[words.length - 1];
 
-  if (first && last) {
+  if (silences.length === 0 && first && last) {
     trimStartMs = Math.max(0, first.startMs - KEEP_AFTER_CUT_MS);
     trimEndMs = Math.min(durationMs, last.endMs + KEEP_BEFORE_CUT_MS);
   } else {
@@ -196,26 +205,48 @@ export const computeTrim = ({
   return { trimStartMs, trimEndMs };
 };
 
-// "cut" marker rule: the speaker presses the cut marker right AFTER a mistake,
-// usually after pausing before the mistake. A cut marker at time t removes the
-// span [s, t], where s is the end of the latest silence that ends at or before
-// t and no earlier than t - 15 s. Without such a silence, s = max(0, t - 15 s).
-// These cuts are always accepted (reason "marker").
+// "cut" marker rule: the speaker makes a mistake, pauses, and presses the cut
+// marker (usually during that pause). The mistake is the speech between the
+// latest pause before it and the marker:
+// - if the marker falls inside a pause (or at most MARKER_GRACE_MS after one),
+//   the mistake ends where that pause starts and the cut ends where the pause
+//   ends (minus the lead-in kept before the next word);
+// - the cut starts inside the latest pause that ends at or before the end of
+//   the mistake (no earlier than MARKER_CUT_LOOKBACK_MS before it), keeping
+//   the usual tail after the previous word — so it never eats into earlier
+//   speech;
+// - without such a pause, only MARKER_CUT_FALLBACK_MS before the mistake ends
+//   is removed.
+// `silences` should contain every detected pause (silence.json), not only
+// the ones long enough to be suggested as cuts. These cuts are always
+// accepted (reason "marker").
 export const markerCut = (
   marker: Marker,
   silences: SilenceRange[],
   durationMs: number,
 ): Cut | null => {
   const t = Math.min(marker.timeMs, durationMs);
-  const windowStart = t - MARKER_CUT_LOOKBACK_MS;
+  const containing = silences.find(
+    (s) => s.startMs <= t && t <= s.endMs + MARKER_GRACE_MS,
+  );
+  const mistakeEndMs = containing ? containing.startMs : t;
+  const endMs = containing
+    ? Math.max(containing.startMs, containing.endMs - KEEP_AFTER_CUT_MS)
+    : t;
   const preceding = silences
-    .filter((s) => s.endMs <= t && s.endMs >= windowStart)
+    .filter(
+      (s) =>
+        s.endMs <= mistakeEndMs &&
+        s.endMs >= mistakeEndMs - MARKER_CUT_LOOKBACK_MS,
+    )
     .sort((a, b) => b.endMs - a.endMs)[0];
-  const startMs = preceding ? preceding.endMs : Math.max(0, windowStart);
-  if (t <= startMs) {
+  const startMs = preceding
+    ? Math.min(preceding.startMs + KEEP_BEFORE_CUT_MS, preceding.endMs)
+    : Math.max(0, mistakeEndMs - MARKER_CUT_FALLBACK_MS);
+  if (endMs <= startMs) {
     return null;
   }
-  return { startMs, endMs: t, reason: "marker", accepted: true };
+  return { startMs, endMs, reason: "marker", accepted: true };
 };
 
 // Suggested cut for a mid-take silence, keeping a little audio on both sides.

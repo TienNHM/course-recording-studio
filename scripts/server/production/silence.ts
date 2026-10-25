@@ -2,7 +2,11 @@ import type { SilencePreset, SilenceRange } from "../../../config/course";
 
 // Silence detection defaults.
 export const SILENCE_NOISE_DB = -38;
-export const SILENCE_MIN_DETECT_MS = 2500;
+// Every pause at least this long is detected and stored in silence.json.
+// Short pauses are needed to find sentence boundaries (e.g. the pause before
+// a verbal slip that a "cut" marker removes); the preset only decides which
+// of them become cut suggestions.
+export const SILENCE_MIN_DETECT_MS = 500;
 
 // A silence must be at least this long to become a (suggested) cut.
 export const PRESET_MIN_SILENCE_MS: Record<SilencePreset, number> = {
@@ -11,8 +15,8 @@ export const PRESET_MIN_SILENCE_MS: Record<SilencePreset, number> = {
   aggressive: 1500,
 };
 
-// Detection must find silences at least as short as the preset needs,
-// so aggressive (1.5 s) lowers the detection minimum below the 2.5 s default.
+// Detection must find silences at least as short as the preset needs.
+// The pause floor is below every preset, so this is always the floor.
 export const getDetectionMinMs = (preset: SilencePreset) => {
   return Math.min(SILENCE_MIN_DETECT_MS, PRESET_MIN_SILENCE_MS[preset]);
 };
