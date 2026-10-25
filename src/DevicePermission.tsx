@@ -71,12 +71,14 @@ const Permission: React.FC<{
   setDeviceState: (newState: PermissionState) => void;
   isInitialState: boolean;
   onNoDevicesFound: () => void;
+  requestVideo: boolean;
 }> = ({
   type,
   deviceState,
   setDeviceState,
   isInitialState,
   onNoDevicesFound,
+  requestVideo,
 }) => {
   const dynamicStyle: React.CSSProperties = useMemo(() => {
     return {
@@ -151,7 +153,7 @@ const Permission: React.FC<{
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: true,
-          video: true,
+          video: requestVideo,
         });
         setDeviceState("prompt");
         stream.getVideoTracks().forEach((track) => track.stop());
@@ -175,7 +177,7 @@ const Permission: React.FC<{
     if (result.state === "prompt" && type === "audio") {
       try {
         await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: requestVideo,
           audio: true,
         });
       } catch (err) {
@@ -190,7 +192,7 @@ const Permission: React.FC<{
     } else if (result.state === "denied") {
       setDeviceState("denied");
     }
-  }, [deviceState, handleError, setDeviceState, type]);
+  }, [deviceState, handleError, requestVideo, setDeviceState, type]);
 
   useEffect(() => {
     run();
@@ -236,16 +238,21 @@ const Permission: React.FC<{
   );
 };
 
-export const DevicePermission: React.FC<{ children: ReactNode }> = ({
-  children,
-}) => {
+// Lessons recorded without a webcam only need microphone access; the screen
+// is shared later through the browser's own picker.
+export const DevicePermission: React.FC<{
+  children: ReactNode;
+  requireCamera: boolean;
+}> = ({ children, requireCamera }) => {
   const [noDeviceFound, setNoDeviceFound] = useState(false);
   const [audioState, setAudioState] = useState<PermissionState>("initial");
   const [videoState, setVideoState] = useState<PermissionState>("initial");
 
   const isInitialState = useMemo(() => {
-    return audioState === "initial" || videoState === "initial";
-  }, [audioState, videoState]);
+    return (
+      audioState === "initial" || (requireCamera && videoState === "initial")
+    );
+  }, [audioState, requireCamera, videoState]);
 
   const dynamicContainer: React.CSSProperties = useMemo(() => {
     return {
@@ -262,7 +269,10 @@ export const DevicePermission: React.FC<{ children: ReactNode }> = ({
     return <PermissionError />;
   }
 
-  if (audioState === "granted" && videoState === "granted") {
+  if (
+    audioState === "granted" &&
+    (!requireCamera || videoState === "granted")
+  ) {
     return <>{children}</>;
   }
 
@@ -276,20 +286,26 @@ export const DevicePermission: React.FC<{ children: ReactNode }> = ({
             deviceState={audioState}
             setDeviceState={(newState) => setAudioState(newState)}
             onNoDevicesFound={onNoDevicesFound}
+            requestVideo={requireCamera}
           />
-          <Permission
-            isInitialState={isInitialState}
-            type="video"
-            deviceState={videoState}
-            setDeviceState={(newState) => setVideoState(newState)}
-            onNoDevicesFound={onNoDevicesFound}
-          />
+          {requireCamera ? (
+            <Permission
+              isInitialState={isInitialState}
+              type="video"
+              deviceState={videoState}
+              setDeviceState={(newState) => setVideoState(newState)}
+              onNoDevicesFound={onNoDevicesFound}
+              requestVideo
+            />
+          ) : null}
         </div>
         {isInitialState ? null : (
           <div style={textContainer}>
             <div style={explanationContainer}>
               <div style={title}>
-                This app requires access to your microphone and camera.
+                {requireCamera
+                  ? "This lesson records your webcam, so the app needs access to your microphone and camera."
+                  : "This app requires access to your microphone."}
               </div>
               <div style={explanationWrapper}>
                 1. Click on the padlock/info icon next to the web address in

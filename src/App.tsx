@@ -15,7 +15,10 @@ import { EnsureBrowserSupport } from "./components/EnsureBrowserSupport";
 import { Button } from "./components/ui/button";
 import { LibraryPage } from "./library/LibraryPage";
 import { ReviewPage } from "./review/ReviewPage";
-import { CurrentLessonProvider } from "./state/current-lesson";
+import {
+  CurrentLessonProvider,
+  useCurrentLesson,
+} from "./state/current-lesson";
 import { MediaSourcesProvider } from "./state/media-sources";
 import { useView } from "./state/view";
 
@@ -127,6 +130,21 @@ const Recorder: React.FC<{
   );
 };
 
+const RecordView: React.FC<{ onBackToLibrary: () => void }> = ({
+  onBackToLibrary,
+}) => {
+  const { lesson, tree, error } = useCurrentLesson();
+  // Wait for the lesson to load so we know whether to ask for the camera.
+  if (tree === null && error === null) {
+    return null;
+  }
+  return (
+    <DevicePermission requireCamera={lesson?.recordingProfile.webcam ?? false}>
+      <Recorder onBackToLibrary={onBackToLibrary} />
+    </DevicePermission>
+  );
+};
+
 const App = () => {
   const [view, setView] = useView();
   const showLibrary = useCallback(() => setView("library"), [setView]);
@@ -140,9 +158,7 @@ const App = () => {
       ) : view === "review" ? (
         <ReviewPage onBack={showLibrary} />
       ) : (
-        <DevicePermission>
-          <Recorder onBackToLibrary={showLibrary} />
-        </DevicePermission>
+        <RecordView onBackToLibrary={showLibrary} />
       )}
     </CurrentLessonProvider>
   );
