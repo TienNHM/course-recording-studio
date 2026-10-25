@@ -12,7 +12,7 @@ export const calcMetadata: CalculateMetadataFunction<MainProps> = async ({
   compositionId,
 }) => {
   const { hasAtLeast1Camera, scenesWithCameras } = getAllCameras({
-    compositionId,
+    folder: compositionId,
     scenes: props.scenes,
   });
 

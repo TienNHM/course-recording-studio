@@ -1,5 +1,4 @@
 import type { Caption } from "@remotion/captions";
-import { FPS } from "../../../../config/fps";
 import { joinBackticks } from "../../processing/join-backticks";
 import { postprocessCaptions } from "../../processing/postprocess-subs";
 import type { UnserializedSrt } from "./serialize-srt";
@@ -48,9 +47,11 @@ const segmentCaptions = (caption: Caption[]) => {
 export const calculateSrt = ({
   startFrame,
   captions,
+  fps,
 }: {
   captions: Caption[];
   startFrame: number;
+  fps: number;
 }) => {
   const postprocessed = joinBackticks(postprocessCaptions(captions));
   const segments = segmentCaptions(postprocessed);
@@ -77,7 +78,7 @@ export const calculateSrt = ({
       throw new Error("lastSegment is undefined");
     }
 
-    const offset = -(startFrame / FPS) * 1000;
+    const offset = -(startFrame / fps) * 1000;
 
     const firstTimestampMs = Math.max(
       0,

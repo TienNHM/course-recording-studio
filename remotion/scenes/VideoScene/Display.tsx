@@ -86,6 +86,7 @@ export const Display: React.FC<{
             trimBefore={startFrame}
             trimAfter={trimAfter}
             src={scene.cameras.display.src}
+            muted={scene.options?.muteDisplay ?? false}
             style={{
               width: displayLayout.width,
               height: displayLayout.height,

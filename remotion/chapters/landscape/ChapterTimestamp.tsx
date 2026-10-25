@@ -1,7 +1,7 @@
 import { measureText } from "@remotion/layout-utils";
 import React, { useMemo } from "react";
+import { useVideoConfig } from "remotion";
 import { TITLE_FONT } from "../../../config/fonts";
-import { FPS } from "../../../config/fps";
 import { formatMilliseconds } from "../../../src/helpers/format-time";
 import { ChapterType } from "../make-chapters";
 
@@ -23,8 +23,9 @@ export const ChapterTimestamp: React.FC<{
   chapter: ChapterType;
   timestampOfLastChapter: number;
 }> = ({ chapter, timestampOfLastChapter }) => {
+  const { fps } = useVideoConfig();
   const biggestWidth = getChapterWidth(
-    formatMilliseconds((timestampOfLastChapter / FPS) * 1000),
+    formatMilliseconds((timestampOfLastChapter / fps) * 1000),
   );
 
   const style: React.CSSProperties = useMemo(() => {
@@ -44,6 +45,6 @@ export const ChapterTimestamp: React.FC<{
   }, [biggestWidth]);
 
   return (
-    <div style={style}>{formatMilliseconds((chapter.start / FPS) * 1000)}</div>
+    <div style={style}>{formatMilliseconds((chapter.start / fps) * 1000)}</div>
   );
 };

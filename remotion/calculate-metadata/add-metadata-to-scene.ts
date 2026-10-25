@@ -1,3 +1,4 @@
+import { FPS } from "../../config/fps";
 import { CanvasLayout } from "../../config/layout";
 import {
   Cameras,
@@ -80,6 +81,7 @@ export const addMetadataToScene = async ({
     ? calculateSrt({
         startFrame: actualStartFrame,
         captions,
+        fps: FPS,
       })
     : [];
 
