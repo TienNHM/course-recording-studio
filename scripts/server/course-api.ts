@@ -42,6 +42,8 @@ const lessonFields = z.object({
       generateChapters: z.boolean(),
       intro: z.boolean(),
       outro: z.boolean(),
+      autoProcess: z.boolean(),
+      autoPublish: z.boolean(),
     })
     .partial(),
   status: lessonStatus,

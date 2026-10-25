@@ -1,5 +1,6 @@
 // HTTP handlers for post-production, the edit plan and rendering.
-//   POST PRODUCTION_START  {lessonPath, retranscribe?}  → JobState
+//   POST PRODUCTION_START  {lessonPath, retranscribe?, autoPublish?} → JobState
+//        (autoPublish overrides the lesson setting for this job: render afterwards or not)
 //   GET  PRODUCTION_STATUS ?lessonPath=                 → JobState | null
 //   POST PRODUCTION_CANCEL {lessonPath}                 → {cancelled: boolean}
 //   GET  EDIT_PLAN_API     ?lessonPath=                 → EditPlan
@@ -9,21 +10,18 @@
 //   POST RENDER_LESSON     {lessonPath}                 → JobState
 import type { IncomingMessage, ServerResponse } from "http";
 import { z } from "zod";
-import type { LessonStatus } from "../../../config/course";
 import { editPlan } from "../../../config/course";
 import fs from "fs";
 import { EOL } from "os";
-import { readLesson, updateLesson, writeJsonAtomic } from "../course-store";
-import { runRender } from "../render/render-lesson";
-import { applyEditPlanPatch, resolvePlanDurationMs } from "./edit-plan";
-import type { JobState } from "./job-queue";
 import {
-  cancelJob,
-  enqueueJob,
-  getActiveJob,
-  reconcileJobState,
-} from "./job-queue";
-import { runProduction } from "./run-production";
+  settleLessonStatus,
+  startProductionJob,
+  startRenderJob,
+} from "../automation/pipeline";
+import { readLesson, writeJsonAtomic } from "../course-store";
+import { HttpError } from "../http-json";
+import { applyEditPlanPatch, resolvePlanDurationMs } from "./edit-plan";
+import { cancelJob, getActiveJob, reconcileJobState } from "./job-queue";
 import { captionList, checkCaptionEdit } from "./captions";
 import {
   getTakeFiles,
@@ -32,15 +30,6 @@ import {
   readCaptions,
   readEditPlan,
 } from "./take-files";
-
-class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 const sendJson = (res: ServerResponse, status: number, data: unknown) => {
   res.statusCode = status;
@@ -108,26 +97,6 @@ const handler =
     }
   };
 
-const setLessonStatus = (lessonPath: string, status: LessonStatus) => {
-  try {
-    updateLesson(lessonPath, (l) => ({ ...l, status }));
-  } catch (e) {
-    console.error(`Could not set lesson status to ${status}`, e);
-  }
-};
-
-// Lesson status after a job ends (or is found interrupted).
-const settleLessonStatus = (state: JobState) => {
-  if (state.kind === "production") {
-    setLessonStatus(
-      state.lessonPath,
-      state.status === "COMPLETED" ? "REVIEW" : "RECORDED",
-    );
-  } else if (state.status === "COMPLETED") {
-    setLessonStatus(state.lessonPath, "PUBLISHED");
-  }
-};
-
 const lessonPathBody = z.object({ lessonPath: z.string().min(1) });
 
 const ensureNoActiveJob = (lessonPath: string) => {
@@ -141,27 +110,18 @@ const ensureNoActiveJob = (lessonPath: string) => {
 
 export const handleProductionStart = handler(["POST"], async (req, res) => {
   const body = parse(
-    lessonPathBody.extend({ retranscribe: z.boolean().optional() }),
+    lessonPathBody.extend({
+      retranscribe: z.boolean().optional(),
+      autoPublish: z.boolean().optional(),
+    }),
     await readBody(req),
   );
-  const lesson = readLesson(body.lessonPath);
-  if (!lesson.selectedTake) {
-    throw new HttpError(400, "The lesson has no selected take");
-  }
-  ensureNoActiveJob(body.lessonPath);
-  const state = enqueueJob({
-    kind: "production",
+  const state = startProductionJob({
     lessonPath: body.lessonPath,
-    takeId: lesson.selectedTake,
-    run: (ctx) =>
-      runProduction({
-        lessonPath: body.lessonPath,
-        retranscribe: body.retranscribe ?? false,
-        ctx,
-      }),
-    onSettled: settleLessonStatus,
+    retranscribe: body.retranscribe ?? false,
+    autoPublish: body.autoPublish,
+    trigger: "manual",
   });
-  setLessonStatus(body.lessonPath, "PROCESSING");
   sendJson(res, 202, state);
 });
 
@@ -262,17 +222,9 @@ export const handleCaptions = handler(["GET", "PUT"], async (req, res) => {
 
 export const handleRenderLesson = handler(["POST"], async (req, res) => {
   const body = parse(lessonPathBody, await readBody(req));
-  const plan = readEditPlan(body.lessonPath);
-  if (!plan) {
-    throw new HttpError(400, "No edit plan yet. Run post-production first.");
-  }
-  ensureNoActiveJob(body.lessonPath);
-  const state = enqueueJob({
-    kind: "render",
-    lessonPath: body.lessonPath,
-    takeId: plan.takeId,
-    run: (ctx) => runRender({ lessonPath: body.lessonPath, ctx }),
-    onSettled: settleLessonStatus,
-  });
-  sendJson(res, 202, state);
+  sendJson(
+    res,
+    202,
+    startRenderJob({ lessonPath: body.lessonPath, trigger: "manual" }),
+  );
 });

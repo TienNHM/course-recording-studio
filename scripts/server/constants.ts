@@ -20,3 +20,9 @@ export const DISK_SPACE = "/api/disk-space";
 export const HEALTH = "/api/health";
 export const IMPORT_RECORDING = "/api/lesson/import-recording";
 export const PUBLISHED_FILES = "/api/lesson/published";
+
+// Automatic pipeline and "drop to publish" inbox.
+export const PIPELINE_STATUS = "/api/pipeline/status";
+export const AUTOMATION_SETTINGS = "/api/automation/settings";
+export const AUTOMATION_INBOX = "/api/automation/inbox";
+export const AUTOMATION_PROCESS_PENDING = "/api/automation/process-pending";

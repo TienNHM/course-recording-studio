@@ -24,6 +24,7 @@ import {
 } from "./courses";
 import { createProject } from "./create-project";
 import { registerAutomationRoutes } from "./import-recording";
+import { registerPipelineRoutes, startAutomation } from "./automation/routes";
 import { registerProductionRoutes } from "./production/register-routes";
 import { indexHtmlDev } from "./index-html";
 import { getProjectFolder } from "./projects";
@@ -95,10 +96,13 @@ export const startServer = async () => {
   app.use(CANCEL_TRANSCRIBE, handleCancelTranscription);
   // Post-production, edit plan and render routes (Course Recording Studio).
   registerProductionRoutes(app);
+  // Automatic pipeline, inbox folder and batch processing.
+  registerPipelineRoutes(app);
   app.use("/", indexHtmlDev(vite, rootDir));
 
   const port = process.env.PORT || SERVER_PORT;
 
   app.listen(port);
   console.log(`Recording interface running on http://localhost:${port}`);
+  startAutomation();
 };

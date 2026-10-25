@@ -113,10 +113,13 @@ export const enqueueJob = ({
   takeId,
   run,
   onSettled,
+  step = "Waiting for other jobs to finish",
 }: {
   kind: JobKind;
   lessonPath: string;
   takeId: string | null;
+  // Step text while QUEUED (e.g. why the job was started automatically).
+  step?: string;
   run: (ctx: JobContext) => Promise<void>;
   // Called once with the final state (COMPLETED / FAILED / CANCELLED).
   onSettled: (state: JobState) => void;
@@ -132,7 +135,7 @@ export const enqueueJob = ({
       lessonPath,
       takeId,
       status: "QUEUED",
-      step: "Waiting for other jobs to finish",
+      step,
       progress: 0,
       error: null,
       createdAt: now,

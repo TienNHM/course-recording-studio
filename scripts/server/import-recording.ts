@@ -1,8 +1,10 @@
 // Automation routes for AI agents and scripts (MCP server, CLI):
 //   GET  HEALTH            → {ok, app, version, port, publicDir}
 //   POST IMPORT_RECORDING  {lessonPath, displayPath, webcamPath?, markers?, takeId?}
-//        → {lesson, take} — copies existing video files (OBS, phone, …) from the
-//          local disk into recordings/<takeId>/ and selects the take.
+//        → {lesson, take, pipeline} — copies existing video files (OBS, phone, …)
+//          from the local disk into recordings/<takeId>/ and selects the take.
+//          With the lesson's autoProcess on (or autoProcess:true in the body),
+//          post-production is queued right away (pipeline.productionJob).
 //   GET  PUBLISHED_FILES   ?lessonPath= → {lessonPath, dir, files[]}
 import type { Server } from "connect";
 import fs from "fs";
@@ -33,6 +35,9 @@ import {
   probeMedia,
   runRemotionBinary,
 } from "./production/ffmpeg";
+import type { AutoProcessResult } from "./automation/pipeline";
+import { maybeAutoProcess } from "./automation/pipeline";
+import type { PipelineTrigger } from "./automation/decisions";
 import { getActiveJob } from "./production/job-queue";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +55,8 @@ export const importRecordingRequest = z.object({
   webcamPath: z.string().min(1).optional(),
   markers: z.array(marker).optional(),
   takeId: takeIdParam.optional(),
+  // Overrides lesson.postProduction.autoProcess for this import.
+  autoProcess: z.boolean().optional(),
 });
 export type ImportRecordingRequest = z.infer<typeof importRecordingRequest>;
 
@@ -262,10 +269,13 @@ export type ImportRecordingResponse = {
     conversions: Record<string, "copy" | "remux" | "transcode">;
     markers: number;
   };
+  // Automatic post-production started after the import (autoProcess).
+  pipeline: AutoProcessResult;
 };
 
 export const importRecording = async (
   req: ImportRecordingRequest,
+  { trigger = "import" }: { trigger?: PipelineTrigger } = {},
 ): Promise<ImportRecordingResponse> => {
   readLesson(req.lessonPath);
   if (getActiveJob(req.lessonPath)) {
@@ -324,8 +334,17 @@ export const importRecording = async (
       recordingProfile: { ...l.recordingProfile, webcam: webcam !== null },
     }));
 
+    const pipeline = maybeAutoProcess({
+      lessonPath: req.lessonPath,
+      trigger,
+      override: req.autoProcess,
+    });
+
     return {
-      lesson,
+      lesson: pipeline.productionJob
+        ? { ...lesson, status: "PROCESSING" }
+        : lesson,
+      pipeline,
       take: {
         takeId,
         dir: takeDir,

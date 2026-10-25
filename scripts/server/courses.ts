@@ -25,6 +25,7 @@ import {
   takeFileName,
   takeIdParam,
 } from "./course-api";
+import { maybeAutoProcess } from "./automation/pipeline";
 import { uniqueSlug } from "./course-slug";
 import {
   PUBLIC_DIR,
@@ -59,7 +60,10 @@ const readModule = (courseId: string, moduleId: string): CourseModule => {
   );
 };
 
-const create = (req: CreateRequest): Course | CourseModule | Lesson => {
+// Creates a course, module or lesson (ids are unique slugs of the titles).
+export const createEntry = (
+  req: CreateRequest,
+): Course | CourseModule | Lesson => {
   if (req.kind === "course") {
     const id = uniqueSlug(req.name, listSubdirs(coursesRoot()), "course");
     const created = course.parse({
@@ -107,7 +111,7 @@ const create = (req: CreateRequest): Course | CourseModule | Lesson => {
 export const handleCourses = jsonHandler({
   GET: () => buildCourseTree(coursesRoot()),
   POST: async (req: IncomingMessage) => {
-    return create(createRequest.parse(await readJsonBody(req)));
+    return createEntry(createRequest.parse(await readJsonBody(req)));
   },
   PATCH: async (req: IncomingMessage) => {
     const { courseId, patch } = patchCourseRequest.parse(
@@ -161,11 +165,17 @@ export const handleSelectTake = jsonHandler({
       throw new HttpError(404, `Take ${takeId} does not exist`);
     }
 
-    return updateLesson(dir, (l) => ({
+    const selected = updateLesson(dir, (l) => ({
       ...l,
       selectedTake: takeId,
       status: "RECORDED",
     }));
+    // autoProcess: post-production starts as soon as the take is saved.
+    const { productionJob } = maybeAutoProcess({
+      lessonPath: dir,
+      trigger: "select-take",
+    });
+    return productionJob ? readLesson(dir) : selected;
   },
 });
 
