@@ -1,12 +1,10 @@
 * {
   box-sizing: border-box;
-  color: white;
 }
 
 #root {
   width: 100%;
   height: 100%;
-  color: white;
 }
 
 .spinner {
@@ -17,7 +15,7 @@
 .spinner-item {
   width: 5px;
   height: 5px;
-  background-color: white; /* Change the color as needed */
+  background-color: currentColor;
   border-radius: 50%;
   margin: 0 5px;
   animation: bounce 1.4s infinite ease-in-out;
@@ -36,7 +34,7 @@
 .loader {
   width: 12px;
   height: 12px;
-  border: 2px solid #fff;
+  border: 2px solid currentColor;
   border-bottom-color: transparent;
   border-radius: 50%;
   display: inline-block;
