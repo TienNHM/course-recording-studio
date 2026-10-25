@@ -323,8 +323,8 @@ export const RecordingView: React.FC<{
           <p className="truncate text-caption text-muted-foreground">
             {resolution && hasVideo
               ? t("sources.resolution", {
-                  width: resolution.width,
-                  height: resolution.height,
+                  width: String(resolution.width),
+                  height: String(resolution.height),
                   fps: formatNumber(Math.round(resolution.fps * 100) / 100),
                 })
               : t(`sources.hint.${prefix}`)}
@@ -450,7 +450,7 @@ export const RecordingView: React.FC<{
 
       <div className="flex flex-col gap-2 p-3">
         <div className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-caption text-muted-foreground">
+          <span className="w-20 shrink-0 truncate text-caption text-muted-foreground">
             {t("sources.video")}
           </span>
           <Select
@@ -501,7 +501,7 @@ export const RecordingView: React.FC<{
         {recordAudio ? (
           <>
             <div className="flex items-center gap-2">
-              <span className="w-16 shrink-0 text-caption text-muted-foreground">
+              <span className="w-20 shrink-0 truncate text-caption text-muted-foreground">
                 {t("sources.audio")}
               </span>
               <Select
@@ -527,7 +527,7 @@ export const RecordingView: React.FC<{
               </Select>
             </div>
             <div className="flex items-center gap-2">
-              <span className="flex w-16 shrink-0 justify-end pr-1 text-muted-foreground">
+              <span className="flex w-20 shrink-0 justify-end pr-1 text-muted-foreground">
                 <Mic className="h-3.5 w-3.5" aria-hidden />
               </span>
               <VolumeMeter stream={meterStream} label={t("live.micLevel")} />

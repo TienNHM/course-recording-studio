@@ -56,9 +56,9 @@ const PanelTitle: React.FC<{
   readonly icon: React.ReactNode;
   readonly children: React.ReactNode;
 }> = ({ icon, children }) => (
-  <div className="flex items-center gap-2 text-heading">
-    {icon}
-    <h2 className="min-w-0 truncate">{children}</h2>
+  <div className="flex items-start gap-2 text-heading">
+    <span className="mt-1 shrink-0">{icon}</span>
+    <h2 className="line-clamp-2 min-w-0 break-words">{children}</h2>
   </div>
 );
 
@@ -529,11 +529,6 @@ export const SavedTakePanel: React.FC<{
             tone={done ? "success" : "info"}
             label={t(`take.jobStatus.${currentJob.status}`)}
           />
-          {currentJob.step ? (
-            <p className="mt-1.5 truncate text-caption text-muted-foreground">
-              {currentJob.step}
-            </p>
-          ) : null}
         </div>
       ) : null}
 
@@ -542,14 +537,14 @@ export const SavedTakePanel: React.FC<{
           <Video className="h-4 w-4" aria-hidden />
           {done ? t("take.reviewNow") : t("take.reviewWhenReady")}
         </Button>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-2">
           <Button variant="secondary" onClick={onRecordAnother}>
             <RotateCcw className="h-4 w-4" aria-hidden />
-            <span className="truncate">{t("take.recordAnother")}</span>
+            {t("take.recordAnother")}
           </Button>
           <Button variant="ghost" onClick={onBackToLibrary}>
             <LibraryBig className="h-4 w-4" aria-hidden />
-            <span className="truncate">{t("take.backToLibrary")}</span>
+            {t("take.backToLibrary")}
           </Button>
         </div>
       </div>

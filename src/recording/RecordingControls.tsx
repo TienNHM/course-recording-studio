@@ -164,7 +164,12 @@ export const RecordingControls: React.FC<{
             key={type}
             variant="secondary"
             size="xs"
-            className="justify-between gap-1 px-2"
+            className={cn(
+              "gap-1 px-2",
+              isPanel
+                ? "justify-between"
+                : "h-auto flex-col items-center py-1.5",
+            )}
             onClick={() => onMarker(type)}
             aria-label={t("markers.add", {
               type: t(`markers.${type}`),
@@ -172,7 +177,7 @@ export const RecordingControls: React.FC<{
             })}
             aria-keyshortcuts={MARKER_KEYS[type]}
           >
-            <span className="flex min-w-0 items-center gap-1">
+            <span className="flex min-w-0 max-w-full items-center gap-1">
               {MARKER_ICONS[type]}
               <span className="truncate">{t(`markers.${type}`)}</span>
             </span>
