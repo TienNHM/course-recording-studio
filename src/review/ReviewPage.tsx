@@ -45,7 +45,7 @@ import type { LessonPreviewHandle } from "./LessonPreview";
 import { LessonPreview } from "./LessonPreview";
 import { usePlayerMs, usePlayheadStore, type PlayheadStore } from "./playhead";
 import { PublishedFiles } from "./PublishedFiles";
-import { fetchPipelineStatus, type PipelineStatus } from "./review-api";
+import { fetchPipelineStatus, type PipelineStatus } from "../actions/automation";
 import {
   computeReviewSummary,
   originalMsToPlayerMs,

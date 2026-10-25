@@ -23,7 +23,7 @@ import {
 } from "../components/ui/dialog";
 import { Tooltip } from "../components/ui/tooltip";
 import { useFormat, useT } from "../i18n";
-import { fetchPublishedFiles, type PublishedFile } from "./review-api";
+import { fetchPublishedFiles, type PublishedFile } from "../actions/automation";
 import { formatYouTubeChapters, type Chapter } from "./review-helpers";
 import { useClipboard } from "./use-clipboard";
 

@@ -4,7 +4,7 @@ import type { LessonStatus } from "../../config/course";
 import { LessonStatusBadge } from "../components/LessonStatusBadge";
 import { cn } from "../helpers/utils";
 import { useT } from "../i18n";
-import type { PipelineStatus } from "./review-api";
+import type { PipelineStatus } from "../actions/automation";
 import type { ReviewSummary } from "./review-helpers";
 import { useReviewFormat } from "./use-review-format";
 
