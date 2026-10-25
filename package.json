@@ -11,7 +11,8 @@
     "lint": "eslint src && tsc",
     "dev": "bun studio.ts",
     "upgrade": "remotion upgrade",
-    "test": "bun test tests"
+    "test": "bun test tests",
+    "studio": "bun scripts/cli/index.ts"
   },
   "dependencies": {
     "@code-hike/lighter": "1.0.3",

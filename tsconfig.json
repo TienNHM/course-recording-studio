@@ -28,7 +28,8 @@
     "scripts",
     "config",
     "studio.ts",
-    "tests"
+    "tests",
+    "mcp"
   ],
   "exclude": ["remotion.config.ts", "vite.config.ts"]
 }
